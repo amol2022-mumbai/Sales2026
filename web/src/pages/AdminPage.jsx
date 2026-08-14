@@ -11,6 +11,7 @@ import { platformSectionFromPath } from '../lib/platformNavigation.jsx';
 
 const LICENSE_STATUS_TONES = { active: 'green', trial: 'indigo', expiring: 'sky', expired: 'rose', suspended: 'amber', cancelled: 'slate' };
 const CLIENT_STATUS_TONES = { active: 'green', inactive: 'slate', suspended: 'amber' };
+const LIFECYCLE_TONES = { pending: 'slate', trial: 'indigo', active: 'green', expiring: 'sky', expired: 'rose', suspended: 'amber', cancelled: 'slate', deactivated: 'slate' };
 
 function statusBadge(status) {
   return <Badge tone={LICENSE_STATUS_TONES[status] || 'slate'}>{status}</Badge>;
@@ -240,6 +241,12 @@ function ClientsTab() {
   const [inviteForm, setInviteForm] = useState({ name: '', email: '' });
   const [inviteResult, setInviteResult] = useState(null);
   const [sendingInvite, setSendingInvite] = useState(false);
+  const [onboarding, setOnboarding] = useState(false);
+  const [onboardForm, setOnboardForm] = useState({});
+  const [onboardResult, setOnboardResult] = useState(null);
+  const [onboardingSaving, setOnboardingSaving] = useState(false);
+  const [plans, setPlans] = useState([]);
+  const [actingId, setActingId] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -313,8 +320,59 @@ function ClientsTab() {
     }
   }
 
+  async function openOnboard() {
+    setError(null);
+    setOnboardResult(null);
+    setOnboardForm({ name: '', domain: '', industry: '', planId: '', licenseStatus: 'active', adminName: '', adminEmail: '' });
+    try {
+      const p = await adminApi.plans.list();
+      setPlans(p);
+    } catch (e) {
+      setError(e.message);
+    }
+    setOnboarding(true);
+  }
+
+  async function submitOnboard() {
+    setOnboardingSaving(true);
+    setError(null);
+    setOnboardResult(null);
+    try {
+      const payload = {
+        name: onboardForm.name,
+        domain: onboardForm.domain || null,
+        industry: onboardForm.industry || null,
+        planId: onboardForm.planId ? Number(onboardForm.planId) : null,
+        licenseStatus: onboardForm.planId ? onboardForm.licenseStatus : undefined,
+        adminName: onboardForm.adminName || undefined,
+        adminEmail: onboardForm.adminEmail || undefined,
+      };
+      const res = await adminApi.clients.onboard(payload);
+      setOnboardResult(res);
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setOnboardingSaving(false);
+    }
+  }
+
+  async function lifecycleAction(c, action) {
+    setActingId(c.id);
+    setError(null);
+    try {
+      await adminApi.clients[action](c.id);
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setActingId(null);
+    }
+  }
+
   const update = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const updateInvite = (k) => (e) => setInviteForm((f) => ({ ...f, [k]: e.target.value }));
+  const updateOnboard = (k) => (e) => setOnboardForm((f) => ({ ...f, [k]: e.target.value }));
 
   if (loading) {
     return (
@@ -328,9 +386,14 @@ function ClientsTab() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-slate-500">{clients.length} client(s)</p>
-        <button type="button" className="btn-primary" onClick={openCreate}>
-          <Plus className="h-4 w-4" /> New client
-        </button>
+        <div className="flex gap-2">
+          <button type="button" className="btn-secondary" onClick={openOnboard}>
+            <Building2 className="h-4 w-4" /> Onboard tenant
+          </button>
+          <button type="button" className="btn-primary" onClick={openCreate}>
+            <Plus className="h-4 w-4" /> New client
+          </button>
+        </div>
       </div>
 
       {error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
@@ -342,6 +405,7 @@ function ClientsTab() {
               <th className="px-4 py-3">Client</th>
               <th className="px-4 py-3">Domain</th>
               <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Lifecycle</th>
               <th className="px-4 py-3">License</th>
               <th className="px-4 py-3">Users</th>
               <th className="px-4 py-3 text-right">Actions</th>
@@ -355,10 +419,28 @@ function ClientsTab() {
                 <td className="px-4 py-3">
                   <Badge tone={CLIENT_STATUS_TONES[c.status] || 'slate'}>{c.status}</Badge>
                 </td>
+                <td className="px-4 py-3">
+                  <Badge tone={LIFECYCLE_TONES[c.lifecycleStatus] || 'slate'}>{c.lifecycleStatus || '—'}</Badge>
+                </td>
                 <td className="px-4 py-3">{statusBadge(c.licenseStatus || c.license?.status || 'active')}</td>
                 <td className="px-4 py-3 text-slate-600">{c.userCount ?? 0}</td>
                 <td className="px-4 py-3 text-right">
-                  <button type="button" className="text-sm font-medium text-brand-600 hover:text-brand-700" onClick={() => openInvite(c)}>
+                  {c.status !== 'active' && (
+                    <button type="button" className="text-sm font-medium text-emerald-600 hover:text-emerald-700" disabled={actingId === c.id} onClick={() => lifecycleAction(c, 'activate')}>
+                      Activate
+                    </button>
+                  )}
+                  {c.status === 'active' && (
+                    <button type="button" className="text-sm font-medium text-amber-600 hover:text-amber-700" disabled={actingId === c.id} onClick={() => lifecycleAction(c, 'suspend')}>
+                      Suspend
+                    </button>
+                  )}
+                  {c.status !== 'inactive' && (
+                    <button type="button" className="ml-3 text-sm font-medium text-slate-500 hover:text-slate-700" disabled={actingId === c.id} onClick={() => lifecycleAction(c, 'deactivate')}>
+                      Deactivate
+                    </button>
+                  )}
+                  <button type="button" className="ml-3 text-sm font-medium text-brand-600 hover:text-brand-700" onClick={() => openInvite(c)}>
                     <UserPlus className="mr-1 inline h-4 w-4" />Invite admin
                   </button>
                   <button type="button" className="ml-3 text-sm font-medium text-brand-600 hover:text-brand-700" onClick={() => openEdit(c)}>
@@ -443,6 +525,83 @@ function ClientsTab() {
             {sendingInvite ? <Spinner className="h-4 w-4" /> : 'Send invitation'}
           </button>
         </div>
+      </Modal>
+
+      <Modal open={onboarding} title="Onboard tenant" onClose={() => setOnboarding(false)}>
+        {onboardResult ? (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+              <p className="font-medium">Tenant created</p>
+              <p className="mt-1">{onboardResult.company.name} is ready.</p>
+            </div>
+            {onboardResult.invitation && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+                <p className="text-slate-600">Share this link with {onboardResult.invitation.email}:</p>
+                <code className="mt-1 block break-all rounded bg-white px-2 py-1 text-xs">{window.location.origin}/accept-invite?token={onboardResult.invitation.invitationToken}</code>
+              </div>
+            )}
+            <div className="flex justify-end gap-3">
+              <button type="button" className="btn-primary" onClick={() => { setOnboarding(false); setOnboardResult(null); }}>
+                Done
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <label className="label">Company name</label>
+              <input className="input" value={onboardForm.name || ''} onChange={updateOnboard('name')} placeholder="Acme Inc." />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Domain</label>
+                <input className="input" value={onboardForm.domain || ''} onChange={updateOnboard('domain')} placeholder="app.acme.com" />
+              </div>
+              <div>
+                <label className="label">Industry</label>
+                <input className="input" value={onboardForm.industry || ''} onChange={updateOnboard('industry')} placeholder="Manufacturing" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Plan</label>
+                <select className="input" value={onboardForm.planId || ''} onChange={updateOnboard('planId')}>
+                  <option value="">— No plan —</option>
+                  {plans.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="label">License status</label>
+                <select className="input" value={onboardForm.licenseStatus || 'active'} onChange={updateOnboard('licenseStatus')} disabled={!onboardForm.planId}>
+                  {['active', 'trial'].map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="rounded-lg border border-slate-200 p-3">
+              <p className="text-sm font-medium text-slate-700">Company admin (optional)</p>
+              <div className="mt-2 grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Full name</label>
+                  <input className="input" value={onboardForm.adminName || ''} onChange={updateOnboard('adminName')} placeholder="Jane Doe" />
+                </div>
+                <div>
+                  <label className="label">Email</label>
+                  <input className="input" type="email" value={onboardForm.adminEmail || ''} onChange={updateOnboard('adminEmail')} placeholder="jane@acme.com" />
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button type="button" className="btn-secondary" onClick={() => setOnboarding(false)}>Cancel</button>
+              <button type="button" className="btn-primary" disabled={onboardingSaving || !onboardForm.name || (!!onboardForm.adminName !== !!onboardForm.adminEmail)} onClick={submitOnboard}>
+                {onboardingSaving ? <Spinner className="h-4 w-4" /> : 'Create tenant'}
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

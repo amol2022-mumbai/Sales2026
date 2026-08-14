@@ -15,6 +15,20 @@ import { HttpError } from '../lib/httpError.js';
 // its expiry date.
 export const LICENSE_STATUSES = ['active', 'trial', 'expired', 'suspended', 'cancelled'];
 
+// The full tenant lifecycle as observed across the platform. `pending` (no
+// license provisioned yet) and `deactivated` (company status `inactive`) are
+// company-level states; the rest mirror the resolved license status.
+export const TENANT_LIFECYCLE_STATUSES = [
+  'pending',
+  'trial',
+  'active',
+  'expiring',
+  'expired',
+  'suspended',
+  'cancelled',
+  'deactivated',
+];
+
 // Number of days before expiry at which an active/trial license is reported as
 // `expiring`.
 export const EXPIRING_SOON_DAYS = 30;
@@ -166,6 +180,38 @@ export function loadTenant(user, tenantId = null) {
 }
 
 /**
+ * Compute a tenant's single lifecycle state by combining its company status
+ * with its resolved license status. Precedence:
+ *   suspended/deactivated (company level) → pending (no license) → license state.
+ * @returns {{ company, license, plan, lifecycle, status, ...resolveLicense } | null}
+ */
+export function resolveTenantLifecycle(db, companyId) {
+  const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(companyId);
+  if (!company) return null;
+
+  const resolved = resolveLicense(db, companyId);
+
+  let lifecycle;
+  if (company.status === 'suspended') lifecycle = 'suspended';
+  else if (company.status === 'inactive') lifecycle = 'deactivated';
+  else if (!resolved.license) lifecycle = 'pending';
+  else lifecycle = resolved.status;
+
+  return { company, ...resolved, lifecycle };
+}
+
+/**
+ * Derive a lifecycle state from an already-resolved tenant (used where the
+ * company + resolved license are already in hand to avoid an extra query).
+ */
+export function lifecycleFromTenant(company, resolved) {
+  if (company.status === 'suspended') return 'suspended';
+  if (company.status === 'inactive') return 'deactivated';
+  if (!resolved.license) return 'pending';
+  return resolved.status;
+}
+
+/**
  * Throw if the client license is not active (used as a request guard).
  */
 export function assertLicenseActive(tenant) {
@@ -250,6 +296,9 @@ export function buildTenantPayload(tenant) {
     postalCode: company.postal_code || null,
     currency: company.currency || 'USD',
     timezone: company.timezone || 'UTC',
+    lifecycleStatus: lifecycleFromTenant(company, tenant),
+    onboardedAt: company.onboarded_at || null,
+    activatedAt: company.activated_at || null,
     license: {
       status,
       planKey: plan?.key || null,

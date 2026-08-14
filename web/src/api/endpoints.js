@@ -17,6 +17,10 @@ export const adminApi = {
     create: (payload) => apiFetch('/admin/clients', { method: 'POST', body: payload }),
     update: (id, payload) => apiFetch(`/admin/clients/${id}`, { method: 'PUT', body: payload }),
     inviteAdmin: (id, payload) => apiFetch(`/admin/clients/${id}/invite-admin`, { method: 'POST', body: payload }),
+    onboard: (payload) => apiFetch('/admin/clients/onboard', { method: 'POST', body: payload }),
+    activate: (id) => apiFetch(`/admin/clients/${id}/activate`, { method: 'POST' }),
+    suspend: (id) => apiFetch(`/admin/clients/${id}/suspend`, { method: 'POST' }),
+    deactivate: (id) => apiFetch(`/admin/clients/${id}/deactivate`, { method: 'POST' }),
   },
   plans: {
     list: () => apiFetch('/admin/plans'),
@@ -67,6 +71,7 @@ export const companyApi = {
   list: () => apiFetch('/companies'),
   get: (id) => apiFetch(`/companies/${id}`),
   update: (id, payload) => apiFetch(`/companies/${id}`, { method: 'PUT', body: payload }),
+  completeSetup: (id, payload) => apiFetch(`/companies/${id}/complete-setup`, { method: 'POST', body: payload }),
 };
 
 export const usersApi = {

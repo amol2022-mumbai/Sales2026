@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS companies (
   currency      TEXT    NOT NULL DEFAULT 'USD',
   timezone      TEXT    NOT NULL DEFAULT 'UTC',
   status        TEXT    NOT NULL DEFAULT 'active' CHECK (status IN ('active','inactive','suspended')),
+  onboarded_at  TEXT,
+  activated_at  TEXT,
   created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );

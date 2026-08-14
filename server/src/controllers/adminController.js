@@ -5,7 +5,7 @@ import { ok, created, paginated } from '../lib/response.js';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { hashPassword } from '../lib/password.js';
 import { MODULES, CORE_MODULES } from '../config/modules.js';
-import { resolveLicense, getUserCount, loadTenant, assertUserLimit } from '../services/licenseService.js';
+import { resolveLicense, getUserCount, loadTenant, assertUserLimit, lifecycleFromTenant, resolveTenantLifecycle } from '../services/licenseService.js';
 import { aiStatus, testAiConnection } from '../services/aiService.js';
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -72,6 +72,8 @@ function companyToJson(c) {
     currency: c.currency,
     timezone: c.timezone,
     status: c.status,
+    onboardedAt: c.onboarded_at || null,
+    activatedAt: c.activated_at || null,
     createdAt: c.created_at,
     updatedAt: c.updated_at,
   };
@@ -126,11 +128,15 @@ export const listClients = asyncHandler(async (req, res) => {
   const clients = rows.map((c) => {
     const license = db.prepare('SELECT * FROM licenses WHERE company_id = ?').get(c.id);
     const userCount = db.prepare("SELECT COUNT(*) AS c FROM users WHERE company_id = ? AND status != 'inactive'").get(c.id).c;
-    const { status: licenseStatus, expiresAt, plan, moduleKeys, storageLimitMb, exportEnabled, apiEnabled } = resolveLicense(db, c.id);
+    const resolved = resolveLicense(db, c.id);
+    const { status: licenseStatus, expiresAt, plan, moduleKeys, storageLimitMb, exportEnabled, apiEnabled } = resolved;
     return {
       ...companyToJson(c),
       license: licenseToJson(license, c.id),
       licenseStatus,
+      lifecycleStatus: lifecycleFromTenant(c, resolved),
+      onboardedAt: c.onboarded_at || null,
+      activatedAt: c.activated_at || null,
       licenseExpiresAt: expiresAt,
       planName: plan?.name || null,
       planKey: plan?.key || null,
@@ -147,12 +153,10 @@ export const listClients = asyncHandler(async (req, res) => {
 
 export const getClient = asyncHandler(async (req, res) => {
   const db = getDb();
-  const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(req.params.id);
-  if (!company) throw notFound('Client not found');
-  const license = db.prepare('SELECT * FROM licenses WHERE company_id = ?').get(company.id);
+  const resolved = resolveTenantLifecycle(db, req.params.id);
+  if (!resolved) throw notFound('Client not found');
+  const { company, license, plan, lifecycle, moduleKeys, userLimit } = resolved;
   const userCount = db.prepare("SELECT COUNT(*) AS c FROM users WHERE company_id = ? AND status != 'inactive'").get(company.id).c;
-  const plan = license?.plan_id ? db.prepare('SELECT * FROM plans WHERE id = ?').get(license.plan_id) || null : null;
-  const { moduleKeys, userLimit } = resolveLicense(db, company.id);
   const users = db
     .prepare(
       `SELECT u.id, u.name, u.email, u.status, u.last_login_at, r.key AS roleKey, r.name AS roleName
@@ -164,6 +168,8 @@ export const getClient = asyncHandler(async (req, res) => {
     ...companyToJson(company),
     license: licenseToJson(license, company.id),
     plan: plan ? { id: plan.id, key: plan.key, name: plan.name } : null,
+    licenseStatus: resolved.status,
+    lifecycleStatus: lifecycle,
     userLimit,
     enabledFeatures: moduleKeys,
     userCount,
@@ -275,6 +281,192 @@ export const updateClient = asyncHandler(async (req, res) => {
 
   const updated = db.prepare('SELECT * FROM companies WHERE id = ?').get(company.id);
   return ok(res, companyToJson(updated));
+});
+
+// ---------------------------------------------------------------------------
+// Tenant lifecycle actions (Super Admin only). These transition the company
+// level status that the auth middleware enforces (suspended/inactive) and are
+// audited separately from generic client edits.
+// ---------------------------------------------------------------------------
+export const activateTenant = asyncHandler(async (req, res) => {
+  const db = getDb();
+  const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(req.params.id);
+  if (!company) throw notFound('Client not found');
+
+  const now = new Date().toISOString();
+  db.prepare(
+    `UPDATE companies SET status = 'active', activated_at = COALESCE(activated_at, ?), updated_at = ? WHERE id = ?`
+  ).run(now, now, company.id);
+
+  // Un-suspend the license when the tenant was suspended at the license level.
+  db.prepare("UPDATE licenses SET status = 'active', updated_at = ? WHERE company_id = ? AND status = 'suspended'").run(now, company.id);
+
+  req.audit?.('tenant.activate', { entityType: 'company', entityId: company.id });
+
+  const updated = db.prepare('SELECT * FROM companies WHERE id = ?').get(company.id);
+  return ok(res, companyToJson(updated));
+});
+
+export const suspendTenant = asyncHandler(async (req, res) => {
+  const db = getDb();
+  const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(req.params.id);
+  if (!company) throw notFound('Client not found');
+
+  db.prepare("UPDATE companies SET status = 'suspended', updated_at = ? WHERE id = ?").run(new Date().toISOString(), company.id);
+  req.audit?.('tenant.suspend', { entityType: 'company', entityId: company.id });
+
+  const updated = db.prepare('SELECT * FROM companies WHERE id = ?').get(company.id);
+  return ok(res, companyToJson(updated));
+});
+
+export const deactivateTenant = asyncHandler(async (req, res) => {
+  const db = getDb();
+  const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(req.params.id);
+  if (!company) throw notFound('Client not found');
+
+  db.prepare("UPDATE companies SET status = 'inactive', updated_at = ? WHERE id = ?").run(new Date().toISOString(), company.id);
+  req.audit?.('tenant.deactivate', { entityType: 'company', entityId: company.id });
+
+  const updated = db.prepare('SELECT * FROM companies WHERE id = ?').get(company.id);
+  return ok(res, companyToJson(updated));
+});
+
+// ---------------------------------------------------------------------------
+// Composite onboarding (Super Admin only). Creates a company, optionally
+// provisions its license (plan + trial/active status) and creates the Company
+// Admin as a pending user with a one-time invitation token — atomically, so the
+// full "Create Company → Select Plan → Set Trial/License → Create Company
+// Admin → Send Invitation" flow never leaves a half-created tenant.
+// ---------------------------------------------------------------------------
+export const onboardTenant = asyncHandler(async (req, res) => {
+  const db = getDb();
+  const name = req.body.name;
+  const slug = slugify(name);
+
+  if (req.body.domain) {
+    const existing = db.prepare('SELECT id FROM companies WHERE domain = ?').get(req.body.domain);
+    if (existing) throw conflict('A client with this domain already exists');
+  }
+
+  let plan = null;
+  if (req.body.planId != null) {
+    plan = db.prepare('SELECT * FROM plans WHERE id = ?').get(req.body.planId);
+    if (!plan) throw notFound('Plan not found');
+  }
+
+  const adminRole = db.prepare("SELECT id, key FROM roles WHERE key = 'business_owner'").get();
+  if (!adminRole) throw badRequest('business_owner role missing');
+  if (req.body.adminEmail) {
+    const existingUser = db.prepare('SELECT id, company_id FROM users WHERE email = ?').get(req.body.adminEmail);
+    if (existingUser) throw conflict('This email already belongs to another user');
+  }
+
+  const invitationToken = crypto.randomBytes(32).toString('hex');
+  const invitationExpiresAt = new Date(Date.now() + 7 * 86400000).toISOString();
+  const now = new Date().toISOString();
+
+  db.exec('BEGIN');
+  let companyId;
+  let licenseId = null;
+  let adminUserId = null;
+  try {
+    const companyResult = db
+      .prepare(
+        `INSERT INTO companies (name, slug, email, phone, website, address, city, state, country, industry, postal_code, currency, timezone, logo_url, favicon_url, brand_color, domain, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        name,
+        slug,
+        req.body.email ?? null,
+        req.body.phone ?? null,
+        req.body.website ?? null,
+        req.body.address ?? null,
+        req.body.city ?? null,
+        req.body.state ?? null,
+        req.body.country ?? null,
+        req.body.industry ?? null,
+        req.body.postalCode ?? null,
+        req.body.currency ?? 'USD',
+        req.body.timezone ?? 'UTC',
+        req.body.logoUrl ?? null,
+        req.body.faviconUrl ?? null,
+        req.body.brandColor ?? null,
+        req.body.domain ?? null,
+        req.body.status ?? 'active'
+      );
+    companyId = Number(companyResult.lastInsertRowid);
+
+    if (plan) {
+      const status = req.body.licenseStatus ?? 'active';
+      const startsAt = req.body.startsAt ?? new Date().toISOString().slice(0, 10);
+      let expiresAt = req.body.expiresAt ?? null;
+      if (req.body.expiresAt === undefined) {
+        const base = startsAt;
+        if (status === 'trial' && plan.trial_days > 0) expiresAt = addDays(base, plan.trial_days);
+        else if (status === 'active' && plan.license_duration_days > 0) expiresAt = addDays(base, plan.license_duration_days);
+      }
+      const modulesJson = req.body.modules !== undefined ? (req.body.modules != null ? JSON.stringify(req.body.modules) : null) : null;
+      const licenseResult = db
+        .prepare(
+          `INSERT INTO licenses (company_id, plan_id, status, starts_at, expires_at, user_limit, modules, storage_limit_mb, export_enabled, api_enabled, billing_cycle, auto_renew, created_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          companyId,
+          plan.id,
+          status,
+          startsAt,
+          expiresAt,
+          req.body.userLimit ?? null,
+          modulesJson,
+          req.body.storageLimitMb ?? null,
+          req.body.exportEnabled == null ? null : req.body.exportEnabled ? 1 : 0,
+          req.body.apiEnabled == null ? null : req.body.apiEnabled ? 1 : 0,
+          req.body.billingCycle ?? null,
+          req.body.autoRenew == null ? 1 : req.body.autoRenew ? 1 : 0,
+          req.user.id
+        );
+      licenseId = Number(licenseResult.lastInsertRowid);
+    }
+
+    if (req.body.adminName && req.body.adminEmail) {
+      const adminResult = db
+        .prepare(
+          `INSERT INTO users (company_id, role_id, name, email, password_hash, status, invitation_token, invitation_expires_at)
+           VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)`
+        )
+        .run(
+          companyId,
+          adminRole.id,
+          req.body.adminName,
+          req.body.adminEmail,
+          hashPassword(crypto.randomBytes(16).toString('hex')),
+          invitationToken,
+          invitationExpiresAt
+        );
+      adminUserId = Number(adminResult.lastInsertRowid);
+    }
+
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+
+  req.audit?.('tenant.create', { entityType: 'company', entityId: companyId, metadata: { name } });
+  if (licenseId) req.audit?.('license.upsert', { entityType: 'company', entityId: companyId, metadata: { planId: plan.id, status: req.body.licenseStatus ?? 'active' } });
+  if (adminUserId) req.audit?.('tenant.invite_admin', { entityType: 'user', entityId: adminUserId, metadata: { email: req.body.adminEmail, companyId } });
+
+  const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(companyId);
+  const license = licenseId ? db.prepare('SELECT * FROM licenses WHERE id = ?').get(licenseId) : null;
+  return created(res, {
+    company: companyToJson(company),
+    license: licenseToJson(license, companyId),
+    invitation: adminUserId
+      ? { invitationToken, userId: adminUserId, email: req.body.adminEmail, status: 'pending' }
+      : null,
+  });
 });
 
 // ---------------------------------------------------------------------------

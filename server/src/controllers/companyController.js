@@ -32,6 +32,8 @@ function companyToJson(c) {
     currency: c.currency,
     timezone: c.timezone,
     status: c.status,
+    onboardedAt: c.onboarded_at || null,
+    activatedAt: c.activated_at || null,
     createdAt: c.created_at,
     updatedAt: c.updated_at,
   };
@@ -120,6 +122,53 @@ export const updateCompany = asyncHandler(async (req, res) => {
   }
 
   req.audit?.('company.update', { entityType: 'company', entityId: company.id });
+
+  const updated = db.prepare('SELECT * FROM companies WHERE id = ?').get(req.params.id);
+  return ok(res, companyToJson(updated));
+});
+
+// ---------------------------------------------------------------------------
+// Company Admin first-login setup (Phase 15). Completes the company profile and
+// marks the tenant as onboarded. Reuses the same updatable profile fields as
+// updateCompany but additionally stamps `companies.onboarded_at`.
+// ---------------------------------------------------------------------------
+export const completeCompanySetup = asyncHandler(async (req, res) => {
+  const db = getDb();
+  const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(req.params.id);
+  if (!company) throw notFound('Company not found');
+
+  if (!req.user.isSuperAdmin && company.id !== req.user.companyId) {
+    throw forbidden('You cannot modify another company');
+  }
+
+  const sets = [];
+  const values = [];
+  for (const field of UPDATABLE) {
+    if (req.body[field] !== undefined) {
+      const column =
+        {
+          postalCode: 'postal_code',
+          logoUrl: 'logo_url',
+          faviconUrl: 'favicon_url',
+          brandColor: 'brand_color',
+        }[field] || field;
+      sets.push(`${column} = ?`);
+      values.push(req.body[field]);
+    }
+  }
+  if (req.body.name !== undefined) {
+    sets.push('slug = ?');
+    values.push(slugify(req.body.name));
+  }
+
+  sets.push(
+    "onboarded_at = COALESCE(onboarded_at, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
+    "updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')"
+  );
+  values.push(req.params.id);
+  db.prepare(`UPDATE companies SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+
+  req.audit?.('company.setup_complete', { entityType: 'company', entityId: company.id });
 
   const updated = db.prepare('SELECT * FROM companies WHERE id = ?').get(req.params.id);
   return ok(res, companyToJson(updated));

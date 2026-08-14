@@ -81,6 +81,11 @@ export function applyIncrementalMigrations(db) {
   ensureColumn(db, 'users', 'invitation_token', 'TEXT');
   ensureColumn(db, 'users', 'invitation_expires_at', 'TEXT');
 
+  // Tenant lifecycle (Phase 15): first-login onboarding completion and
+  // explicit activation timestamps.
+  ensureColumn(db, 'companies', 'onboarded_at', 'TEXT');
+  ensureColumn(db, 'companies', 'activated_at', 'TEXT');
+
   // Plans & entitlements (Phase 13): plan-level entitlements and per-license
   // overrides. The licenses table CHECK is expanded via a rebuild below.
   ensureColumn(db, 'plans', 'storage_limit_mb', 'INTEGER NOT NULL DEFAULT -1');

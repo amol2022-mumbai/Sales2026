@@ -747,6 +747,46 @@ export const acceptInviteSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Tenant onboarding (Phase 15): Super Admin composite provisioning + Company
+// Admin first-login setup.
+// ---------------------------------------------------------------------------
+export const onboardTenantSchema = z.object({
+  name: z.string().trim().min(1).max(160),
+  email: z.string().trim().max(160).nullable().optional(),
+  phone: z.string().trim().max(30).nullable().optional(),
+  website: z.string().trim().max(200).nullable().optional(),
+  address: z.string().trim().max(300).nullable().optional(),
+  city: z.string().trim().max(120).nullable().optional(),
+  state: z.string().trim().max(120).nullable().optional(),
+  country: z.string().trim().max(120).nullable().optional(),
+  industry: z.string().trim().max(120).nullable().optional(),
+  postalCode: z.string().trim().max(20).nullable().optional(),
+  currency: z.string().trim().min(3).max(3).optional(),
+  timezone: z.string().trim().max(60).optional(),
+  logoUrl: z.string().trim().max(500).nullable().optional(),
+  faviconUrl: z.string().trim().max(500).nullable().optional(),
+  brandColor: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
+  domain: z.string().trim().max(200).nullable().optional(),
+  status: z.enum(['active', 'inactive', 'suspended']).optional(),
+  planId: z.number().int().positive().nullable().optional(),
+  licenseStatus: z.enum(licenseStatuses).optional(),
+  startsAt: isoDate,
+  expiresAt: isoDate,
+  userLimit: z.number().int().min(-1).nullable().optional(),
+  modules: z.array(z.string().trim().min(1)).nullable().optional(),
+  storageLimitMb: z.number().int().min(-1).nullable().optional(),
+  exportEnabled: z.boolean().nullable().optional(),
+  apiEnabled: z.boolean().nullable().optional(),
+  billingCycle: z.enum(['monthly', 'annual']).nullable().optional(),
+  autoRenew: z.boolean().nullable().optional(),
+  adminName: z.string().trim().min(1).max(120).optional(),
+  adminEmail: email.optional(),
+});
+
+export const completeCompanySetupSchema = companySettingsSchema;
+
+
+// ---------------------------------------------------------------------------
 // Collections (invoices & payments) — Phase 10
 // ---------------------------------------------------------------------------
 export const invoiceStatuses = ['Unpaid', 'Partial', 'Paid'];
