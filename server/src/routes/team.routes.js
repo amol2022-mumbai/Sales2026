@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, requireModule } from '../middleware/auth.js';
 import { authorize } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
 import {
@@ -21,7 +21,7 @@ import {
 
 const router = Router();
 
-router.use(authenticate);
+router.use(authenticate, requireModule('sales_team'));
 
 router.get('/', authorize('sales_team:view'), validate(listTeamsQuerySchema, 'query'), listTeams);
 router.post('/', authorize('sales_team:create'), validate(createTeamSchema), createTeam);

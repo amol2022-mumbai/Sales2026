@@ -9,19 +9,19 @@ export const listAuditLogs = asyncHandler(async (req, res) => {
   let where = '';
   const params = [];
   if (!req.user.isSuperAdmin) {
-    where = 'WHERE company_id = ?';
+    where = 'WHERE a.company_id = ?';
     params.push(req.user.companyId);
   } else if (req.query.companyId) {
-    where = 'WHERE company_id = ?';
+    where = 'WHERE a.company_id = ?';
     params.push(req.query.companyId);
   }
 
   if (req.query.action) {
-    where += where ? ' AND action = ?' : 'WHERE action = ?';
+    where += where ? ' AND a.action = ?' : 'WHERE a.action = ?';
     params.push(req.query.action);
   }
 
-  const total = db.prepare(`SELECT COUNT(*) AS c FROM audit_logs ${where}`).get(...params).c;
+  const total = db.prepare(`SELECT COUNT(*) AS c FROM audit_logs a ${where}`).get(...params).c;
   const rows = db
     .prepare(
       `SELECT a.*, u.name AS user_name, u.email AS user_email

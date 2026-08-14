@@ -1,7 +1,7 @@
 import { getDb } from '../db/connection.js';
 import { ok } from '../lib/response.js';
 import { asyncHandler } from '../lib/asyncHandler.js';
-import { getUserDataScope, buildLeadScopeWhere, buildCustomerScopeWhere } from '../services/access.js';
+import { getUserDataScope, buildLeadScopeWhere, buildCustomerScopeWhere, buildUserScopeWhere, buildTeamScopeWhere } from '../services/access.js';
 
 const GROUP_LIMIT = 8;
 
@@ -18,33 +18,31 @@ export const search = asyncHandler(async (req, res) => {
   const results = { users: [], companies: [], teams: [], leads: [], customers: [], products: [] };
 
   if (scope === 'all' || scope === 'users') {
-    if (req.user.isSuperAdmin) {
-      results.users = db
-        .prepare(
-          `SELECT id, name, email, company_id, status FROM users
-           WHERE name LIKE ? OR email LIKE ? ORDER BY name LIMIT ?`
-        )
-        .all(pattern, pattern, GROUP_LIMIT);
-    } else {
-      results.users = db
-        .prepare(
-          `SELECT id, name, email, company_id, status FROM users
-           WHERE company_id = ? AND (name LIKE ? OR email LIKE ?) ORDER BY name LIMIT ?`
-        )
-        .all(req.user.companyId, pattern, pattern, GROUP_LIMIT);
-    }
+    const userScope = getUserDataScope(req.user);
+    const { where, params } = buildUserScopeWhere(userScope, 'u');
+    const userWhere = where
+      ? `${where} AND (u.name LIKE ? OR u.email LIKE ?)`
+      : `WHERE (u.name LIKE ? OR u.email LIKE ?)`;
+    results.users = db
+      .prepare(
+        `SELECT u.id, u.name, u.email, u.company_id, u.status FROM users u
+         ${userWhere} ORDER BY u.name LIMIT ?`
+      )
+      .all(...params, pattern, pattern, GROUP_LIMIT);
   }
 
   if (scope === 'all' || scope === 'teams') {
-    if (req.user.isSuperAdmin) {
-      results.teams = db
-        .prepare('SELECT id, name, company_id, is_active FROM teams WHERE name LIKE ? ORDER BY name LIMIT ?')
-        .all(pattern, GROUP_LIMIT);
-    } else {
-      results.teams = db
-        .prepare('SELECT id, name, company_id, is_active FROM teams WHERE company_id = ? AND name LIKE ? ORDER BY name LIMIT ?')
-        .all(req.user.companyId, pattern, GROUP_LIMIT);
-    }
+    const teamScope = getUserDataScope(req.user);
+    const { where, params } = buildTeamScopeWhere(teamScope, 't');
+    const teamWhere = where
+      ? `${where} AND (t.name LIKE ?)`
+      : `WHERE (t.name LIKE ?)`;
+    results.teams = db
+      .prepare(
+        `SELECT t.id, t.name, t.company_id, t.is_active FROM teams t
+         ${teamWhere} ORDER BY t.name LIMIT ?`
+      )
+      .all(...params, pattern, GROUP_LIMIT);
   }
 
   if (scope === 'all' || scope === 'companies') {

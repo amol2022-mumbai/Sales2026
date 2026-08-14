@@ -49,11 +49,11 @@ export const login = asyncHandler(async (req, res) => {
     throw unauthorized('Invalid email or password');
   }
   if (!verifyPassword(password, row.password_hash)) {
-    req.audit?.('auth.login_failed', { entityType: 'user', entityId: row.id, metadata: { email: String(email).toLowerCase(), reason: 'invalid_password' } });
+    req.audit?.('auth.login_failed', { entityType: 'user', entityId: row.id, companyId: row.company_id ?? null, metadata: { email: String(email).toLowerCase(), reason: 'invalid_password' } });
     throw unauthorized('Invalid email or password');
   }
   if (row.status !== 'active') {
-    req.audit?.('auth.login_failed', { entityType: 'user', entityId: row.id, metadata: { email: String(email).toLowerCase(), reason: 'inactive_account' } });
+    req.audit?.('auth.login_failed', { entityType: 'user', entityId: row.id, companyId: row.company_id ?? null, metadata: { email: String(email).toLowerCase(), reason: 'inactive_account' } });
     throw unauthorized('Account is not active');
   }
 
@@ -62,7 +62,7 @@ export const login = asyncHandler(async (req, res) => {
 
   const user = getUserContext(row.id);
 
-  req.audit?.('auth.login', { entityType: 'user', entityId: user.id, metadata: { email: user.email } });
+  req.audit?.('auth.login', { entityType: 'user', entityId: user.id, companyId: user.companyId ?? null, metadata: { email: user.email } });
 
   const token = signToken({ sub: user.id });
 
@@ -86,7 +86,7 @@ export const acceptInvite = asyncHandler(async (req, res) => {
     throw badRequest('This invitation is invalid or has already been used');
   }
   if (row.invitation_expires_at && row.invitation_expires_at < new Date().toISOString()) {
-    req.audit?.('auth.accept_invite_failed', { entityType: 'user', entityId: row.id, metadata: { reason: 'expired' } });
+    req.audit?.('auth.accept_invite_failed', { entityType: 'user', entityId: row.id, companyId: row.company_id ?? null, metadata: { reason: 'expired' } });
     throw badRequest('This invitation has expired. Please contact your administrator');
   }
 
@@ -98,7 +98,7 @@ export const acceptInvite = asyncHandler(async (req, res) => {
   ).run(hashPassword(password), now, row.id);
 
   const user = getUserContext(row.id);
-  req.audit?.('auth.accept_invite', { entityType: 'user', entityId: user.id, metadata: { email: user.email } });
+  req.audit?.('auth.accept_invite', { entityType: 'user', entityId: user.id, companyId: user.companyId ?? null, metadata: { email: user.email } });
 
   const authToken = signToken({ sub: user.id });
 
