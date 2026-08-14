@@ -769,13 +769,284 @@ function LicensesTab() {
 }
 
 // ---------------------------------------------------------------------------
+// Subscriptions (subscription lifecycle + billing records across tenants)
+// ---------------------------------------------------------------------------
+function SubscriptionsTab() {
+  const [subs, setSubs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [showInvForm, setShowInvForm] = useState(false);
+  const [invForm, setInvForm] = useState({ amount: '', periodStart: '', periodEnd: '', dueDate: '', description: '' });
+  const [payingId, setPayingId] = useState(null);
+  const [payForm, setPayForm] = useState({ amount: '', paymentDate: '', method: 'Bank Transfer', reference: '' });
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setSubs(await adminApi.subscriptions.list());
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function openDetail(sub) {
+    setDetail(null);
+    setLoadingDetail(true);
+    setError(null);
+    setShowInvForm(false);
+    setPayingId(null);
+    try {
+      setDetail(await adminApi.subscriptions.get(sub.companyId));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoadingDetail(false);
+    }
+  }
+
+  const updateInv = (k) => (e) => setInvForm((f) => ({ ...f, [k]: e.target.value }));
+  const updatePay = (k) => (e) => setPayForm((f) => ({ ...f, [k]: e.target.value }));
+
+  async function createInvoice() {
+    setSaving(true);
+    setError(null);
+    try {
+      await adminApi.subscriptions.createInvoice(detail.companyId, {
+        amount: Number(invForm.amount),
+        periodStart: invForm.periodStart || null,
+        periodEnd: invForm.periodEnd || null,
+        dueDate: invForm.dueDate || null,
+        description: invForm.description || null,
+      });
+      setShowInvForm(false);
+      setInvForm({ amount: '', periodStart: '', periodEnd: '', dueDate: '', description: '' });
+      await openDetail(detail);
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function recordPayment(invoice) {
+    setSaving(true);
+    setError(null);
+    try {
+      await adminApi.subscriptions.recordPayment(invoice.id, {
+        amount: Number(payForm.amount),
+        paymentDate: payForm.paymentDate,
+        method: payForm.method,
+        reference: payForm.reference || null,
+      });
+      setPayingId(null);
+      setPayForm({ amount: '', paymentDate: '', method: 'Bank Transfer', reference: '' });
+      await openDetail(detail);
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex h-40 items-center justify-center">
+        <Spinner className="h-7 w-7 text-brand-600" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-slate-500">{subs.length} subscription(s)</p>
+
+      {error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
+
+      <Card className="overflow-hidden">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-4 py-3">Client</th>
+              <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Plan</th>
+              <th className="px-4 py-3">Users</th>
+              <th className="px-4 py-3">Expires</th>
+              <th className="px-4 py-3">Billed</th>
+              <th className="px-4 py-3">Paid</th>
+              <th className="px-4 py-3">Outstanding</th>
+              <th className="px-4 py-3 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {subs.map((s) => (
+              <tr key={s.companyId} className="hover:bg-slate-50">
+                <td className="px-4 py-3 font-medium text-slate-800">{s.name}</td>
+                <td className="px-4 py-3">{statusBadge(s.licenseStatus)}</td>
+                <td className="px-4 py-3 text-slate-600">{s.planName || '—'}</td>
+                <td className="px-4 py-3 text-slate-600">
+                  {count(s.userCount)}
+                  {s.userLimit > 0 && <span className="text-xs text-slate-400"> / {s.userLimit}</span>}
+                </td>
+                <td className="px-4 py-3 text-slate-500">{s.expiresAt || 'Never'}</td>
+                <td className="px-4 py-3 text-slate-600">{currency(s.billed)}</td>
+                <td className="px-4 py-3 text-emerald-600">{currency(s.paid)}</td>
+                <td className="px-4 py-3 text-rose-600">{currency(s.outstanding)}</td>
+                <td className="px-4 py-3 text-right">
+                  <button type="button" className="text-sm font-medium text-brand-600 hover:text-brand-700" onClick={() => openDetail(s)}>
+                    Billing
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+
+      <Modal open={!!detail} title={`Subscription billing — ${detail?.name || ''}`} onClose={() => setDetail(null)}>
+        {loadingDetail ? (
+          <div className="flex h-32 items-center justify-center">
+            <Spinner className="h-6 w-6 text-brand-600" />
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <div className="rounded-lg bg-slate-50 p-3">
+                <p className="text-lg font-semibold text-slate-900">{currency(detail?.billed)}</p>
+                <p className="text-xs text-slate-500">Billed</p>
+              </div>
+              <div className="rounded-lg bg-slate-50 p-3">
+                <p className="text-lg font-semibold text-emerald-600">{currency(detail?.paid)}</p>
+                <p className="text-xs text-slate-500">Paid</p>
+              </div>
+              <div className="rounded-lg bg-slate-50 p-3">
+                <p className="text-lg font-semibold text-rose-600">{currency(detail?.outstanding)}</p>
+                <p className="text-xs text-slate-500">Outstanding</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-slate-700">Invoices</p>
+              <button type="button" className="btn-secondary px-3 py-1.5 text-xs" onClick={() => setShowInvForm((v) => !v)}>
+                <Plus className="mr-1 inline h-3.5 w-3.5" /> New invoice
+              </button>
+            </div>
+
+            {showInvForm && (
+              <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Amount</label>
+                    <input type="number" className="input" value={invForm.amount} onChange={updateInv('amount')} />
+                  </div>
+                  <div>
+                    <label className="label">Due date</label>
+                    <input type="date" className="input" value={invForm.dueDate} onChange={updateInv('dueDate')} />
+                  </div>
+                  <div>
+                    <label className="label">Period start</label>
+                    <input type="date" className="input" value={invForm.periodStart} onChange={updateInv('periodStart')} />
+                  </div>
+                  <div>
+                    <label className="label">Period end</label>
+                    <input type="date" className="input" value={invForm.periodEnd} onChange={updateInv('periodEnd')} />
+                  </div>
+                </div>
+                <div>
+                  <label className="label">Description</label>
+                  <input className="input" value={invForm.description} onChange={updateInv('description')} placeholder="e.g. July 2026 subscription" />
+                </div>
+                <button type="button" className="btn-primary" disabled={saving || !invForm.amount} onClick={createInvoice}>
+                  {saving ? <Spinner className="h-4 w-4" /> : 'Create invoice'}
+                </button>
+              </div>
+            )}
+
+            {detail?.invoices?.length ? (
+              <div className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+                {detail.invoices.map((inv) => (
+                  <div key={inv.id} className="p-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-slate-800">{inv.invoiceNo}</p>
+                        <p className="text-xs text-slate-400">{inv.periodStart || inv.periodEnd ? `${inv.periodStart || ''} — ${inv.periodEnd || ''}` : inv.description || 'Subscription'}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-medium text-slate-800">{currency(inv.amount)}</span>
+                        <Badge tone={inv.status === 'Paid' ? 'green' : inv.status === 'Partial' ? 'amber' : inv.status === 'Void' ? 'slate' : 'rose'}>{inv.status}</Badge>
+                      </div>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between text-xs text-slate-500">
+                      <span>
+                        Balance {currency(inv.balance)}
+                        {inv.overdue && <span className="ml-2 text-rose-600">Overdue</span>}
+                      </span>
+                      {inv.balance > 0 && inv.status !== 'Void' && (
+                        <button type="button" className="font-medium text-brand-600 hover:text-brand-700" onClick={() => setPayingId(payingId === inv.id ? null : inv.id)}>
+                          Record payment
+                        </button>
+                      )}
+                    </div>
+
+                    {payingId === inv.id && (
+                      <div className="mt-2 space-y-2 rounded-lg bg-slate-50 p-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="label">Amount</label>
+                            <input type="number" className="input" value={payForm.amount} onChange={updatePay('amount')} />
+                          </div>
+                          <div>
+                            <label className="label">Date</label>
+                            <input type="date" className="input" value={payForm.paymentDate} onChange={updatePay('paymentDate')} />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="label">Method</label>
+                            <select className="input" value={payForm.method} onChange={updatePay('method')}>
+                              {['Cash', 'Bank Transfer', 'Cheque', 'UPI', 'Card', 'Other'].map((m) => (
+                                <option key={m} value={m}>{m}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="label">Reference</label>
+                            <input className="input" value={payForm.reference} onChange={updatePay('reference')} />
+                          </div>
+                        </div>
+                        <button type="button" className="btn-primary" disabled={saving || !payForm.amount || !payForm.paymentDate} onClick={() => recordPayment(inv)}>
+                          {saving ? <Spinner className="h-4 w-4" /> : 'Save payment'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400">No billing records yet.</p>
+            )}
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Placeholder platform sections (no new business features implemented)
 // ---------------------------------------------------------------------------
 const PLACEHOLDER_SECTIONS = {
-  subscriptions: {
-    title: 'Subscriptions',
-    description: 'Subscription lifecycle, renewals and billing records across all tenants will appear here.',
-  },
   tenant_users: {
     title: 'Tenant Users',
     description: 'Cross-tenant user directory with role, status and last active details will appear here.',
@@ -842,6 +1113,7 @@ export default function AdminPage() {
     companies: { title: 'Companies / Tenants', description: 'Manage white-label clients, their admins and tenant status.' },
     plans: { title: 'Plans', description: 'Define subscription plans, pricing and included modules.' },
     licenses: { title: 'Licenses', description: 'Issue and manage tenant licenses, status and limits.' },
+    subscriptions: { title: 'Subscriptions', description: 'Subscription lifecycle, renewals and billing records across all tenants.' },
   };
 
   const heading = headings[section];
@@ -859,6 +1131,7 @@ export default function AdminPage() {
       {section === 'companies' && <ClientsTab />}
       {section === 'plans' && <PlansTab />}
       {section === 'licenses' && <LicensesTab />}
+      {section === 'subscriptions' && <SubscriptionsTab />}
       {PLACEHOLDER_SECTIONS[section] && <PlaceholderSection sectionKey={section} />}
     </div>
   );

@@ -626,6 +626,10 @@ export const idParamSchema = z.object({
   id: z.coerce.number().int().positive(),
 });
 
+export const companyIdParamSchema = z.object({
+  companyId: z.coerce.number().int().positive(),
+});
+
 export const teamMemberParamsSchema = z.object({
   id: z.coerce.number().int().positive(),
   userId: z.coerce.number().int().positive(),
@@ -778,6 +782,26 @@ export const listPaymentsQuerySchema = paginationQuerySchema.extend({
   dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'dateTo must be YYYY-MM-DD').optional(),
   sort: z.enum(['paymentNo', 'amount', 'paymentDate', 'method']).optional(),
   order: z.enum(['asc', 'desc']).optional(),
+});
+
+// ---------------------------------------------------------------------------
+// Subscriptions (subscription billing) — Super Admin only.
+// ---------------------------------------------------------------------------
+export const createSubscriptionInvoiceSchema = z.object({
+  amount: z.number().nonnegative(),
+  planId: z.number().int().positive().nullable().optional(),
+  description: z.string().trim().max(300).nullable().optional(),
+  periodStart: isoDate,
+  periodEnd: isoDate,
+  dueDate: isoDate,
+});
+
+export const recordSubscriptionPaymentSchema = z.object({
+  amount: z.number().positive(),
+  paymentDate: dateString,
+  method: z.enum(paymentMethods).optional(),
+  reference: z.string().trim().max(120).nullable().optional(),
+  notes: z.string().trim().max(500).nullable().optional(),
 });
 
 // ---------------------------------------------------------------------------

@@ -84,6 +84,61 @@ CREATE INDEX IF NOT EXISTS idx_licenses_status ON licenses(status);
 CREATE INDEX IF NOT EXISTS idx_licenses_expiry ON licenses(expires_at);
 
 -- ---------------------------------------------------------------------------
+-- Subscription invoices: billing records issued to a tenant for their plan
+-- (subscription billing). Distinct from the `invoices` table, which records a
+-- tenant's own receivable/collection invoices against their customers. `status`
+-- stores Unpaid/Partial/Paid/Void; the paid amount and balance are derived from
+-- `subscription_payments` rather than stored.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS subscription_invoices (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_no   TEXT,
+  company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  plan_id      INTEGER REFERENCES plans(id) ON DELETE SET NULL,
+  amount       REAL    NOT NULL DEFAULT 0,
+  description  TEXT,
+  period_start TEXT,
+  period_end   TEXT,
+  due_date     TEXT,
+  status       TEXT    NOT NULL DEFAULT 'Unpaid' CHECK (status IN ('Unpaid','Partial','Paid','Void')),
+  created_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sub_invoices_no ON subscription_invoices(invoice_no);
+CREATE INDEX IF NOT EXISTS idx_sub_invoices_company ON subscription_invoices(company_id);
+CREATE INDEX IF NOT EXISTS idx_sub_invoices_plan ON subscription_invoices(plan_id);
+CREATE INDEX IF NOT EXISTS idx_sub_invoices_status ON subscription_invoices(status);
+
+-- ---------------------------------------------------------------------------
+-- Subscription payments: payments received against a subscription invoice.
+-- Multiple payments may be applied to one invoice. Soft delete via `deleted_at`;
+-- `payment_no` is the human-facing Payment ID.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS subscription_payments (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  payment_no   TEXT,
+  company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  invoice_id   INTEGER NOT NULL REFERENCES subscription_invoices(id) ON DELETE CASCADE,
+  amount       REAL    NOT NULL DEFAULT 0,
+  payment_date TEXT    NOT NULL,
+  method       TEXT    NOT NULL DEFAULT 'Bank Transfer',
+  reference    TEXT,
+  notes        TEXT,
+  created_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  deleted_at   TEXT,
+  created_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sub_payments_no ON subscription_payments(payment_no);
+CREATE INDEX IF NOT EXISTS idx_sub_payments_company ON subscription_payments(company_id);
+CREATE INDEX IF NOT EXISTS idx_sub_payments_invoice ON subscription_payments(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_sub_payments_date ON subscription_payments(payment_date);
+CREATE INDEX IF NOT EXISTS idx_sub_payments_deleted ON subscription_payments(deleted_at);
+
+-- ---------------------------------------------------------------------------
 -- Roles: system-defined access roles. is_super_admin bypasses RBAC checks.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS roles (

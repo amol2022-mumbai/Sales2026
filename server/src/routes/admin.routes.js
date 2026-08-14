@@ -9,7 +9,10 @@ import {
   upsertLicenseSchema,
   listClientsQuerySchema,
   idParamSchema,
+  companyIdParamSchema,
   inviteAdminSchema,
+  createSubscriptionInvoiceSchema,
+  recordSubscriptionPaymentSchema,
 } from '../schemas/index.js';
 import {
   listClients,
@@ -29,6 +32,12 @@ import {
   aiConfigStatus,
   aiConfigTest,
 } from '../controllers/adminController.js';
+import {
+  listSubscriptions,
+  getSubscription,
+  createSubscriptionInvoice,
+  recordSubscriptionPayment,
+} from '../controllers/subscriptionController.js';
 import {
   adminDashboardQuerySchema,
 } from '../schemas/index.js';
@@ -57,6 +66,12 @@ router.put('/licenses/:id', validate(idParamSchema, 'params'), validate(upsertLi
 
 // Module catalog
 router.get('/modules', listModules);
+
+// Subscriptions (subscription billing records across tenants)
+router.get('/subscriptions', listSubscriptions);
+router.get('/subscriptions/:companyId', validate(companyIdParamSchema, 'params'), getSubscription);
+router.post('/subscriptions/:companyId/invoices', validate(companyIdParamSchema, 'params'), validate(createSubscriptionInvoiceSchema), createSubscriptionInvoice);
+router.post('/subscriptions/invoices/:id/payments', validate(idParamSchema, 'params'), validate(recordSubscriptionPaymentSchema), recordSubscriptionPayment);
 
 // AI Assistant configuration (status + connectivity test; never returns keys)
 router.get('/ai/status', aiConfigStatus);

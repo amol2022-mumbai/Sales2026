@@ -29,6 +29,12 @@ export const adminApi = {
     get: (companyId) => apiFetch(`/admin/licenses/${companyId}`),
     upsert: (companyId, payload) => apiFetch(`/admin/licenses/${companyId}`, { method: 'PUT', body: payload }),
   },
+  subscriptions: {
+    list: () => apiFetch('/admin/subscriptions'),
+    get: (companyId) => apiFetch(`/admin/subscriptions/${companyId}`),
+    createInvoice: (companyId, payload) => apiFetch(`/admin/subscriptions/${companyId}/invoices`, { method: 'POST', body: payload }),
+    recordPayment: (invoiceId, payload) => apiFetch(`/admin/subscriptions/invoices/${invoiceId}/payments`, { method: 'POST', body: payload }),
+  },
   modules: () => apiFetch('/admin/modules'),
   dashboard: (params = {}) => {
     const q = new URLSearchParams(params).toString();
