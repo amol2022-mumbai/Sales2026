@@ -1,0 +1,48 @@
+import { Router } from 'express';
+import healthRoutes from './health.routes.js';
+import authRoutes from './auth.routes.js';
+import dashboardRoutes from './dashboard.routes.js';
+import companyRoutes from './company.routes.js';
+import userRoutes from './user.routes.js';
+import roleRoutes from './role.routes.js';
+import teamRoutes from './team.routes.js';
+import notificationRoutes from './notification.routes.js';
+import auditRoutes from './audit.routes.js';
+import searchRoutes from './search.routes.js';
+import leadRoutes from './leads.routes.js';
+import customerRoutes from './customers.routes.js';
+import followUpRoutes from './followUps.routes.js';
+import pipelineRoutes from './pipeline.routes.js';
+import targetRoutes from './targets.routes.js';
+import collectionsRoutes from './collections.routes.js';
+import reportRoutes from './report.routes.js';
+import misRoutes from './mis.routes.js';
+import aiRoutes from './ai.routes.js';
+import adminRoutes from './admin.routes.js';
+import { publicConfig } from '../controllers/configController.js';
+
+const api = Router();
+
+api.use(healthRoutes);
+api.get('/config', publicConfig);
+api.use('/auth', authRoutes);
+api.use('/dashboard', dashboardRoutes);
+api.use('/companies', companyRoutes);
+api.use('/users', userRoutes);
+api.use('/roles', roleRoutes);
+api.use('/teams', teamRoutes);
+api.use('/notifications', notificationRoutes);
+api.use('/audit-logs', auditRoutes);
+api.use('/search', searchRoutes);
+api.use('/leads', leadRoutes);
+api.use('/customers', customerRoutes);
+api.use('/follow-ups', followUpRoutes);
+api.use('/pipeline', pipelineRoutes);
+api.use('/targets', targetRoutes);
+api.use('/collections', collectionsRoutes);
+api.use('/reports', reportRoutes);
+api.use('/mis', misRoutes);
+api.use('/ai', aiRoutes);
+api.use('/admin', adminRoutes);
+
+export default api;
