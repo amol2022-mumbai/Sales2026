@@ -51,6 +51,14 @@ export const adminApi = {
     const q = new URLSearchParams(params).toString();
     return apiFetch(`/admin/dashboard${q ? `?${q}` : ''}`);
   },
+  operations: {
+    overview: () => apiFetch('/admin/operations'),
+    tenant: (id) => apiFetch(`/admin/operations/tenants/${id}`),
+    alerts: (params = {}) => {
+      const q = new URLSearchParams(params).toString();
+      return apiFetch(`/admin/operations/alerts${q ? `?${q}` : ''}`, { raw: true });
+    },
+  },
 };
 
 export const authApi = {

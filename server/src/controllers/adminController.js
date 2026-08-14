@@ -5,7 +5,7 @@ import { ok, created, paginated } from '../lib/response.js';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { hashPassword } from '../lib/password.js';
 import { MODULES, CORE_MODULES } from '../config/modules.js';
-import { resolveLicense, getUserCount, loadTenant, assertUserLimit, lifecycleFromTenant, resolveTenantLifecycle } from '../services/licenseService.js';
+import { resolveLicense, resolveLicenseState, getUserCount, loadTenant, assertUserLimit, lifecycleFromTenant, resolveTenantLifecycle } from '../services/licenseService.js';
 import { aiStatus, testAiConnection } from '../services/aiService.js';
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -29,7 +29,7 @@ function parseJsonModules(value) {
   }
 }
 
-function planToJson(p) {
+export function planToJson(p) {
   return {
     id: p.id,
     key: p.key,
@@ -51,7 +51,7 @@ function planToJson(p) {
   };
 }
 
-function companyToJson(c) {
+export function companyToJson(c) {
   return {
     id: c.id,
     name: c.name,
@@ -79,7 +79,7 @@ function companyToJson(c) {
   };
 }
 
-function licenseToJson(l, companyId) {
+export function licenseToJson(l, companyId) {
   if (!l) return null;
   return {
     id: l.id,
@@ -105,7 +105,7 @@ function licenseToJson(l, companyId) {
 // ---------------------------------------------------------------------------
 export const listClients = asyncHandler(async (req, res) => {
   const db = getDb();
-  const { page, pageSize, search, status } = req.query;
+  const { page, pageSize, search, status, lifecycle, licenseStatus, planId, sort, order } = req.query;
 
   const where = [];
   const params = [];
@@ -118,28 +118,40 @@ export const listClients = asyncHandler(async (req, res) => {
     where.push('status = ?');
     params.push(status);
   }
+  if (planId) {
+    where.push('id IN (SELECT company_id FROM licenses WHERE plan_id = ?)');
+    params.push(planId);
+  }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
-  const total = db.prepare(`SELECT COUNT(*) AS c FROM companies ${whereSql}`).get(...params).c;
-  const rows = db
-    .prepare(`SELECT * FROM companies ${whereSql} ORDER BY id LIMIT ? OFFSET ?`)
-    .all(...params, pageSize, (page - 1) * pageSize);
+  // Bulk-load licenses/plans so each company's derived license + lifecycle
+  // state is resolved without a per-company query.
+  const rows = db.prepare(`SELECT * FROM companies ${whereSql}`).all(...params);
+  const licenseByCompany = new Map(
+    db.prepare('SELECT * FROM licenses').all().map((l) => [l.company_id, l])
+  );
+  const planById = new Map(db.prepare('SELECT * FROM plans').all().map((p) => [p.id, p]));
+  const userCountByCompany = new Map(
+    db
+      .prepare("SELECT company_id, COUNT(*) AS c FROM users WHERE status != 'inactive' GROUP BY company_id")
+      .all()
+      .map((r) => [r.company_id, r.c])
+  );
 
-  const clients = rows.map((c) => {
-    const license = db.prepare('SELECT * FROM licenses WHERE company_id = ?').get(c.id);
-    const userCount = db.prepare("SELECT COUNT(*) AS c FROM users WHERE company_id = ? AND status != 'inactive'").get(c.id).c;
-    const resolved = resolveLicense(db, c.id);
+  let clients = rows.map((c) => {
+    const license = licenseByCompany.get(c.id) || null;
+    const resolved = resolveLicenseState(license, planById.get(license?.plan_id) ?? null);
     const { status: licenseStatus, expiresAt, plan, moduleKeys, storageLimitMb, exportEnabled, apiEnabled } = resolved;
+    const userCount = userCountByCompany.get(c.id) || 0;
     return {
       ...companyToJson(c),
       license: licenseToJson(license, c.id),
       licenseStatus,
       lifecycleStatus: lifecycleFromTenant(c, resolved),
-      onboardedAt: c.onboarded_at || null,
-      activatedAt: c.activated_at || null,
       licenseExpiresAt: expiresAt,
       planName: plan?.name || null,
       planKey: plan?.key || null,
+      planId: plan?.id ?? null,
       userCount,
       enabledFeatures: moduleKeys == null ? null : [...moduleKeys, ...CORE_MODULES].sort(),
       storageLimitMb,
@@ -148,7 +160,29 @@ export const listClients = asyncHandler(async (req, res) => {
     };
   });
 
-  return paginated(res, clients, { page, pageSize, total });
+  if (lifecycle) clients = clients.filter((c) => c.lifecycleStatus === lifecycle);
+  if (licenseStatus) clients = clients.filter((c) => c.licenseStatus === licenseStatus);
+
+  const dir = order === 'desc' ? -1 : 1;
+  const sortKey = sort || 'name';
+  const compare = (a, b) => {
+    const av = a[sortKey];
+    const bv = b[sortKey];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (typeof av === 'string' || typeof bv === 'string') {
+      return String(av).localeCompare(String(bv)) * dir;
+    }
+    return (av - bv) * dir;
+  };
+  clients.sort(compare);
+
+  const total = clients.length;
+  const offset = (page - 1) * pageSize;
+  const pageItems = clients.slice(offset, offset + pageSize);
+
+  return paginated(res, pageItems, { page, pageSize, total });
 });
 
 export const getClient = asyncHandler(async (req, res) => {

@@ -65,19 +65,22 @@ function serializeModules(set) {
 }
 
 /**
- * Resolve the effective license state for a company. Auto-transitions an
- * active/trial license whose expiry has passed to `expired`, and reports the
- * derived `expiring` state when expiry is within EXPIRING_SOON_DAYS.
- * @returns {{ license: object|null, plan: object|null, status: string, expiresAt: string|null, userLimit: number, moduleKeys: string[]|null, storageLimitMb: number, exportEnabled: boolean, apiEnabled: boolean }}
+ * Resolve the effective license state from an already-loaded license and plan
+ * row (pure — no database access). A `null` license means "fully enabled"
+ * (self-hosted / single-tenant / legacy). An active/trial license whose expiry
+ * has passed resolves to `expired`; one within EXPIRING_SOON_DAYS of expiring
+ * resolves to the derived `expiring` state. `ref` is the reference date string
+ * (YYYY-MM-DD) to evaluate expiry against.
+ * @returns {{ license: object|null, plan: object|null, status: string, expiresAt: string|null, startsAt: string|null, userLimit: number, moduleKeys: string[]|null, storageLimitMb: number, exportEnabled: boolean, apiEnabled: boolean }}
  */
-export function resolveLicense(db, companyId) {
-  const license = db.prepare('SELECT * FROM licenses WHERE company_id = ?').get(companyId);
+export function resolveLicenseState(license, plan, ref = today()) {
   if (!license) {
     return {
       license: null,
       plan: null,
       status: 'active',
       expiresAt: null,
+      startsAt: null,
       userLimit: -1,
       moduleKeys: null,
       storageLimitMb: -1,
@@ -87,19 +90,17 @@ export function resolveLicense(db, companyId) {
   }
 
   let status = license.status;
-  const plan = license.plan_id ? db.prepare('SELECT * FROM plans WHERE id = ?').get(license.plan_id) || null : null;
 
   // Auto-expiry for active/trial licenses.
-  if ((status === 'active' || status === 'trial') && license.expires_at && license.expires_at < today()) {
+  if ((status === 'active' || status === 'trial') && license.expires_at && license.expires_at < ref) {
     status = 'expired';
-    db.prepare("UPDATE licenses SET status = 'expired', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?").run(license.id);
   }
 
   // Derived `expiring` state for active/trial licenses nearing expiry.
   if (status === 'active' || status === 'trial') {
     if (license.expires_at) {
-      const horizon = addDays(today(), EXPIRING_SOON_DAYS);
-      if (license.expires_at <= horizon && license.expires_at >= today()) {
+      const horizon = addDays(ref, EXPIRING_SOON_DAYS);
+      if (license.expires_at <= horizon && license.expires_at >= ref) {
         status = 'expiring';
       }
     }
@@ -129,6 +130,28 @@ export function resolveLicense(db, companyId) {
     exportEnabled,
     apiEnabled,
   };
+}
+
+/**
+ * Resolve the effective license state for a company. Loads the license (and its
+ * plan) then delegates to {@link resolveLicenseState}. Persists the derived
+ * `expired` transition for active/trial licenses whose expiry has passed so the
+ * stored state stays consistent.
+ * @returns {{ license: object|null, plan: object|null, status: string, expiresAt: string|null, startsAt: string|null, userLimit: number, moduleKeys: string[]|null, storageLimitMb: number, exportEnabled: boolean, apiEnabled: boolean }}
+ */
+export function resolveLicense(db, companyId) {
+  const license = db.prepare('SELECT * FROM licenses WHERE company_id = ?').get(companyId);
+  if (!license) return resolveLicenseState(null, null);
+
+  const plan = license.plan_id ? db.prepare('SELECT * FROM plans WHERE id = ?').get(license.plan_id) || null : null;
+
+  // Persist the auto-expiry transition (side effect kept for stored consistency).
+  if ((license.status === 'active' || license.status === 'trial') && license.expires_at && license.expires_at < today()) {
+    license.status = 'expired';
+    db.prepare("UPDATE licenses SET status = 'expired', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?").run(license.id);
+  }
+
+  return resolveLicenseState(license, plan);
 }
 
 /**

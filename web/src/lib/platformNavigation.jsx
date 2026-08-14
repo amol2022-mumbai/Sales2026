@@ -11,6 +11,8 @@ import {
   FileText,
   ShieldCheck,
   Settings,
+  Activity,
+  BellRing,
 } from 'lucide-react';
 
 // Dedicated SaaS platform navigation for the Super Admin. Completely separate
@@ -28,6 +30,8 @@ export const PLATFORM_NAV_SECTIONS = [
   {
     title: 'Operations',
     items: [
+      { key: 'control_center', label: 'Control Center', path: '/admin/operations', icon: Activity },
+      { key: 'alerts', label: 'Alerts', path: '/admin/alerts', icon: BellRing },
       { key: 'subscriptions', label: 'Subscriptions', path: '/admin/subscriptions', icon: Repeat },
       { key: 'tenant_users', label: 'Tenant Users', path: '/admin/tenant-users', icon: Users },
       { key: 'entitlements', label: 'Feature Entitlements', path: '/admin/entitlements', icon: ToggleRight },

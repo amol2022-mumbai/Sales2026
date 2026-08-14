@@ -730,6 +730,35 @@ export const upsertLicenseSchema = z.object({
 export const listClientsQuerySchema = paginationQuerySchema.extend({
   search: z.string().trim().max(100).optional(),
   status: z.enum(['active', 'inactive', 'suspended']).optional(),
+  lifecycle: z
+    .enum(['pending', 'trial', 'active', 'expiring', 'expired', 'suspended', 'cancelled', 'deactivated'])
+    .optional(),
+  licenseStatus: z.enum(licenseStatuses).optional(),
+  planId: z.coerce.number().int().positive().optional(),
+  sort: z.enum(['name', 'createdAt', 'userCount', 'licenseExpiresAt', 'status']).optional(),
+  order: z.enum(['asc', 'desc']).optional(),
+});
+
+// ---------------------------------------------------------------------------
+// SaaS Operations (Phase 16): Super Admin operations overview, tenant detail
+// and derived alerts.
+// ---------------------------------------------------------------------------
+export const operationsOverviewQuerySchema = z.object({}).passthrough();
+
+export const operationsAlertsQuerySchema = paginationQuerySchema.extend({
+  type: z
+    .enum([
+      'license_expiring',
+      'license_expired',
+      'subscription_expired',
+      'payment_failed',
+      'payment_overdue',
+      'user_near_limit',
+      'tenant_suspended',
+      'security',
+    ])
+    .optional(),
+  severity: z.enum(['info', 'warning', 'critical']).optional(),
 });
 
 // ---------------------------------------------------------------------------

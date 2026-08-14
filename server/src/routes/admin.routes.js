@@ -54,7 +54,14 @@ import {
   listSubscriptionPayments,
 } from '../controllers/subscriptionController.js';
 import {
+  operationsOverview,
+  getClientOverview,
+  listAlerts,
+} from '../controllers/operationsController.js';
+import {
   adminDashboardQuerySchema,
+  operationsOverviewQuerySchema,
+  operationsAlertsQuerySchema,
 } from '../schemas/index.js';
 
 const router = Router();
@@ -105,5 +112,10 @@ router.post('/ai/test', aiConfigTest);
 
 // Platform dashboard (cross-tenant analytics)
 router.get('/dashboard', validate(adminDashboardQuerySchema, 'query'), platformDashboard);
+
+// SaaS Operations (Phase 16): operations control center, tenant detail, alerts.
+router.get('/operations', validate(operationsOverviewQuerySchema, 'query'), operationsOverview);
+router.get('/operations/alerts', validate(operationsAlertsQuerySchema, 'query'), listAlerts);
+router.get('/operations/tenants/:id', validate(idParamSchema, 'params'), getClientOverview);
 
 export default router;

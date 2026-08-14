@@ -247,22 +247,49 @@ function ClientsTab() {
   const [onboardingSaving, setOnboardingSaving] = useState(false);
   const [plans, setPlans] = useState([]);
   const [actingId, setActingId] = useState(null);
+  const [search, setSearch] = useState('');
+  const [lifecycle, setLifecycle] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [overview, setOverview] = useState(null);
+  const [overviewData, setOverviewData] = useState(null);
+  const [overviewLoading, setOverviewLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const res = await adminApi.clients.list({ pageSize: 100 });
+      const params = { pageSize: 100 };
+      if (search) params.search = search;
+      if (lifecycle) params.lifecycle = lifecycle;
+      if (statusFilter) params.status = statusFilter;
+      params.sort = 'name';
+      params.order = 'asc';
+      const res = await adminApi.clients.list(params);
       setClients(res.data);
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [search, lifecycle, statusFilter]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  async function openOverview(c) {
+    setOverview(c);
+    setOverviewData(null);
+    setOverviewLoading(true);
+    setError(null);
+    try {
+      setOverviewData(await adminApi.operations.tenant(c.id));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setOverviewLoading(false);
+    }
+  }
 
   function openCreate() {
     setEditing({ id: null });
@@ -396,6 +423,27 @@ function ClientsTab() {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          className="input w-56"
+          placeholder="Search name, email, domain"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <select className="input w-40" value={lifecycle} onChange={(e) => setLifecycle(e.target.value)}>
+          <option value="">All lifecycles</option>
+          {['pending', 'trial', 'active', 'expiring', 'expired', 'suspended', 'cancelled', 'deactivated'].map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+        <select className="input w-40" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <option value="">All statuses</option>
+          {['active', 'inactive', 'suspended'].map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+      </div>
+
       {error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
 
       <Card className="overflow-hidden">
@@ -440,6 +488,9 @@ function ClientsTab() {
                       Deactivate
                     </button>
                   )}
+                  <button type="button" className="text-sm font-medium text-brand-600 hover:text-brand-700" onClick={() => openOverview(c)}>
+                    View
+                  </button>
                   <button type="button" className="ml-3 text-sm font-medium text-brand-600 hover:text-brand-700" onClick={() => openInvite(c)}>
                     <UserPlus className="mr-1 inline h-4 w-4" />Invite admin
                   </button>
@@ -603,6 +654,119 @@ function ClientsTab() {
           </div>
         )}
       </Modal>
+
+      <Modal open={!!overview} title={`Tenant overview — ${overview?.name || ''}`} onClose={() => setOverview(null)} wide>
+        {overviewLoading ? (
+          <div className="flex h-40 items-center justify-center">
+            <Spinner className="h-7 w-7 text-brand-600" />
+          </div>
+        ) : overviewData ? (
+          <TenantOverview data={overviewData} />
+        ) : (
+          <p className="text-sm text-slate-500">Unable to load tenant overview.</p>
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+function TenantOverview({ data }) {
+  const b = data.billing || {};
+  const u = data.usage || {};
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        {[
+          { label: 'Lifecycle', value: <Badge tone={LIFECYCLE_TONES[data.lifecycle] || 'slate'}>{data.lifecycle}</Badge> },
+          { label: 'License', value: statusBadge(data.licenseStatus) },
+          { label: 'Plan', value: data.plan?.name || '—' },
+          { label: 'Seats', value: `${data.userCount}${data.userLimit > 0 ? ` / ${data.userLimit}` : ''}` },
+        ].map((k) => (
+          <div key={k.label}>
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{k.label}</p>
+            <div className="mt-1 text-sm font-medium text-slate-800">{k.value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-lg border border-slate-100 p-4">
+        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Billing</p>
+        <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[
+            { label: 'Cycle', value: b.billingCycle || '—' },
+            { label: 'Current price', value: currency(b.currentPrice) },
+            { label: 'Billed', value: currency(b.billed) },
+            { label: 'Paid', value: currency(b.paid) },
+            { label: 'Outstanding', value: currency(b.outstanding) },
+            { label: 'Open invoices', value: count(b.openInvoices) },
+            { label: 'Failed payments', value: count(b.failedPayments) },
+            { label: 'Renews', value: b.renewalDate || '—' },
+          ].map((k) => (
+            <div key={k.label}>
+              <p className="text-xs text-slate-400">{k.label}</p>
+              <p className="text-sm font-medium text-slate-700">{k.value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-100 p-4">
+        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Usage</p>
+        <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-5">
+          {[
+            { label: 'Leads', value: count(u.leadCount) },
+            { label: 'Customers', value: count(u.customerCount) },
+            { label: 'Open deals', value: count(u.openOpportunities) },
+            { label: 'Won revenue', value: currency(u.wonRevenue) },
+            { label: 'Receivables', value: currency(u.receivablesOutstanding) },
+          ].map((k) => (
+            <div key={k.label}>
+              <p className="text-xs text-slate-400">{k.label}</p>
+              <p className="text-sm font-medium text-slate-700">{k.value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Users ({data.users?.length || 0})</p>
+        <div className="mt-2 overflow-hidden rounded-lg border border-slate-100">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-3 py-2">Name</th>
+                <th className="px-3 py-2">Role</th>
+                <th className="px-3 py-2">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {(data.users || []).map((usr) => (
+                <tr key={usr.id}>
+                  <td className="px-3 py-2 text-slate-700">{usr.name}</td>
+                  <td className="px-3 py-2 text-slate-500">{usr.roleName || usr.roleKey}</td>
+                  <td className="px-3 py-2">
+                    <Badge tone={usr.status === 'active' ? 'green' : 'slate'}>{usr.status}</Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Recent activity</p>
+        <ul className="mt-2 space-y-1.5">
+          {(data.activity || []).slice(0, 8).map((a) => (
+            <li key={a.id} className="flex items-baseline gap-2 text-sm">
+              <span className="font-mono text-xs text-slate-400">{a.createdAt?.slice(11, 16) || ''}</span>
+              <span className="text-slate-700">{a.action}</span>
+              {a.userName && <span className="text-xs text-slate-400">by {a.userName}</span>}
+            </li>
+          ))}
+          {(data.activity || []).length === 0 && <li className="text-sm text-slate-400">No activity recorded.</li>}
+        </ul>
+      </div>
     </div>
   );
 }
@@ -1601,6 +1765,271 @@ function UsageAndLimitsTab() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Control Center & Alerts (Phase 16)
+// ---------------------------------------------------------------------------
+const SEVERITY_TONES = { critical: 'rose', warning: 'amber', info: 'indigo' };
+
+function ControlCenterTab() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setData(await adminApi.operations.overview());
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (loading) {
+    return (
+      <div className="flex h-40 items-center justify-center">
+        <Spinner className="h-7 w-7 text-brand-600" />
+      </div>
+    );
+  }
+  if (!data) return null;
+
+  const t = data.totals;
+  const sub = t.subscription;
+
+  return (
+    <div className="space-y-6">
+      {error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
+
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-6">
+        {[
+          { label: 'Total Tenants', value: count(t.tenants.total) },
+          { label: 'Active', value: count(t.tenants.active) },
+          { label: 'Trial', value: count(t.tenants.trial) },
+          { label: 'Suspended', value: count(t.tenants.suspended) },
+          { label: 'Expired', value: count(t.tenants.expired) },
+          { label: 'New (30d)', value: count(t.newTenants30d) },
+          { label: 'Users', value: count(t.users.total) },
+          { label: 'Active Users', value: count(t.users.active) },
+          { label: 'MRR', value: currency(sub.mrr) },
+          { label: 'ARR', value: currency(sub.arr) },
+          { label: 'Collected', value: currency(sub.collected) },
+          { label: 'Outstanding', value: currency(sub.outstanding) },
+        ].map((k) => (
+          <Card key={k.label} className="p-4">
+            <p className="text-xl font-semibold text-slate-900">{k.value}</p>
+            <p className="mt-0.5 text-xs font-medium text-slate-500">{k.label}</p>
+          </Card>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card className="p-5">
+          <h3 className="text-sm font-semibold text-slate-800">License lifecycle</h3>
+          <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-3">
+            {[
+              { label: 'Active', value: t.licenses.active },
+              { label: 'Trial', value: t.licenses.trial },
+              { label: 'Expired', value: t.licenses.expired },
+              { label: 'Suspended', value: t.licenses.suspended },
+              { label: 'Cancelled', value: t.licenses.cancelled },
+              { label: 'Expiring soon', value: t.licenses.expiringSoon },
+            ].map((k) => (
+              <div key={k.label} className="flex items-baseline gap-2">
+                <p className="text-2xl font-semibold text-slate-900">{count(k.value)}</p>
+                <span className="text-xs text-slate-500">{k.label}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card className="p-5">
+          <h3 className="text-sm font-semibold text-slate-800">Subscriptions & payments</h3>
+          <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-3">
+            {[
+              { label: 'Paid', value: t.payments.paid },
+              { label: 'Partial', value: t.payments.partial },
+              { label: 'Unpaid', value: t.payments.unpaid },
+              { label: 'Overdue', value: t.payments.overdue },
+              { label: 'Failed payments', value: sub.failedPayments },
+              { label: 'Monthly plans', value: t.plans.monthly },
+              { label: 'Annual plans', value: t.plans.annual },
+              { label: 'Conversion', value: t.trialConversion.rate == null ? '—' : `${t.trialConversion.rate}%` },
+            ].map((k) => (
+              <div key={k.label} className="flex items-baseline gap-2">
+                <p className="text-2xl font-semibold text-slate-900">{k.value}</p>
+                <span className="text-xs text-slate-500">{k.label}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card className="p-5">
+          <h3 className="text-sm font-semibold text-slate-800">System health</h3>
+          <div className="mt-3 space-y-2">
+            {[
+              { label: 'Failed webhook events', value: data.health.failedWebhookEvents, tone: data.health.failedWebhookEvents > 0 ? 'rose' : 'green' },
+              { label: 'Pending webhook events', value: data.health.pendingWebhookEvents, tone: 'amber' },
+              { label: 'Failed payments', value: data.health.failedPayments, tone: data.health.failedPayments > 0 ? 'amber' : 'green' },
+              { label: 'Pending invitations', value: data.health.pendingInvitations, tone: 'indigo' },
+            ].map((k) => (
+              <div key={k.label} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
+                <span className="text-sm text-slate-600">{k.label}</span>
+                <Badge tone={k.tone}>{count(k.value)}</Badge>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card className="p-5">
+          <h3 className="text-sm font-semibold text-slate-800">Security events</h3>
+          <div className="mt-3 flex gap-6">
+            <div>
+              <p className="text-2xl font-semibold text-slate-900">{count(data.security.events24h)}</p>
+              <p className="text-xs text-slate-500">last 24h</p>
+            </div>
+            <div>
+              <p className="text-2xl font-semibold text-slate-900">{count(data.security.events7d)}</p>
+              <p className="text-xs text-slate-500">last 7 days</p>
+            </div>
+          </div>
+          <ul className="mt-3 space-y-1.5">
+            {data.security.recent.slice(0, 6).map((s) => (
+              <li key={s.id} className="flex items-baseline gap-2 text-sm">
+                <span className="text-slate-700">{s.action}</span>
+                {s.userEmail && <span className="text-xs text-slate-400">{s.userEmail}</span>}
+                <span className="ml-auto font-mono text-xs text-slate-400">{s.createdAt?.slice(11, 16) || ''}</span>
+              </li>
+            ))}
+            {data.security.recent.length === 0 && <li className="text-sm text-slate-400">No recent security events.</li>}
+          </ul>
+        </Card>
+      </div>
+
+      <Card className="p-5">
+        <h3 className="text-sm font-semibold text-slate-800">Recent activity</h3>
+        <ul className="mt-3 space-y-1.5">
+          {data.activity.slice(0, 10).map((a) => (
+            <li key={a.id} className="flex items-baseline gap-2 text-sm">
+              <span className="text-slate-700">{a.action}</span>
+              {a.companyName && <span className="text-xs text-slate-400">{a.companyName}</span>}
+              {a.userName && <span className="text-xs text-slate-400">by {a.userName}</span>}
+              <span className="ml-auto font-mono text-xs text-slate-400">{a.createdAt?.slice(0, 16) || ''}</span>
+            </li>
+          ))}
+        </ul>
+      </Card>
+    </div>
+  );
+}
+
+const ALERT_TYPE_LABELS = {
+  license_expiring: 'License expiring',
+  license_expired: 'License expired',
+  subscription_expired: 'Subscription expired',
+  payment_failed: 'Failed payment',
+  payment_overdue: 'Overdue payment',
+  user_near_limit: 'Near user limit',
+  tenant_suspended: 'Tenant suspended',
+  security: 'Security',
+};
+
+function AlertsTab() {
+  const [alerts, setAlerts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [type, setType] = useState('');
+  const [severity, setSeverity] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = { pageSize: 100 };
+      if (type) params.type = type;
+      if (severity) params.severity = severity;
+      const res = await adminApi.operations.alerts(params);
+      setAlerts(res.data);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [type, severity]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (loading) {
+    return (
+      <div className="flex h-40 items-center justify-center">
+        <Spinner className="h-7 w-7 text-brand-600" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <select className="input w-52" value={type} onChange={(e) => setType(e.target.value)}>
+          <option value="">All alert types</option>
+          {Object.entries(ALERT_TYPE_LABELS).map(([k, label]) => (
+            <option key={k} value={k}>{label}</option>
+          ))}
+        </select>
+        <select className="input w-40" value={severity} onChange={(e) => setSeverity(e.target.value)}>
+          <option value="">All severities</option>
+          {['info', 'warning', 'critical'].map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+        <p className="ml-auto text-sm text-slate-500">{alerts.length} alert(s)</p>
+      </div>
+
+      {error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
+
+      <Card className="overflow-hidden">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-4 py-3">Severity</th>
+              <th className="px-4 py-3">Type</th>
+              <th className="px-4 py-3">Tenant</th>
+              <th className="px-4 py-3">Message</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {alerts.map((a) => (
+              <tr key={a.id} className="hover:bg-slate-50">
+                <td className="px-4 py-3">
+                  <Badge tone={SEVERITY_TONES[a.severity] || 'slate'}>{a.severity}</Badge>
+                </td>
+                <td className="px-4 py-3 text-slate-600">{ALERT_TYPE_LABELS[a.type] || a.type}</td>
+                <td className="px-4 py-3 font-medium text-slate-800">{a.companyName || '—'}</td>
+                <td className="px-4 py-3 text-slate-600">{a.message}</td>
+              </tr>
+            ))}
+            {alerts.length === 0 && (
+              <tr>
+                <td colSpan={4} className="px-4 py-8 text-center text-sm text-slate-400">No alerts.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </Card>
+    </div>
+  );
+}
+
 const PLACEHOLDER_SECTIONS = {
   tenant_users: {
     title: 'Tenant Users',
@@ -1663,6 +2092,8 @@ export default function AdminPage() {
     subscriptions: { title: 'Subscriptions', description: 'Subscription lifecycle, renewals and billing records across all tenants.' },
     entitlements: { title: 'Feature Entitlements', description: 'Per-tenant plan entitlements: modules, export, API and storage access.' },
     usage: { title: 'Usage & Limits', description: 'Tenant-level seat usage and activity against plan limits.' },
+    control_center: { title: 'Operations Control Center', description: 'Cross-tenant operations, subscriptions, payments, health and security.' },
+    alerts: { title: 'Alerts', description: 'Derived alerts for expiring licenses, failed payments, limits and security.' },
   };
 
   const heading = headings[section];
@@ -1683,6 +2114,8 @@ export default function AdminPage() {
       {section === 'subscriptions' && <SubscriptionsTab />}
       {section === 'entitlements' && <FeatureEntitlementsTab />}
       {section === 'usage' && <UsageAndLimitsTab />}
+      {section === 'control_center' && <ControlCenterTab />}
+      {section === 'alerts' && <AlertsTab />}
       {PLACEHOLDER_SECTIONS[section] && <PlaceholderSection sectionKey={section} />}
     </div>
   );
