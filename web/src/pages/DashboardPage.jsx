@@ -7,7 +7,7 @@ import DashboardChart from '../components/ui/DashboardChart.jsx';
 import Spinner from '../components/ui/Spinner.jsx';
 
 export default function DashboardPage() {
-  const { user } = useAuth();
+  const { user, tenant } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
 
@@ -35,6 +35,29 @@ export default function DashboardPage() {
           Welcome back, {user?.name}. Here&apos;s your {data?.company?.name ? `${data.company.name} ` : ''}sales overview.
         </p>
       </div>
+
+      {tenant?.license && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm">
+          <span className="font-medium text-slate-700">{tenant.license.planName || tenant.license.planKey || 'Plan'}</span>
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+              tenant.license.status === 'active'
+                ? 'bg-emerald-100 text-emerald-700'
+                : tenant.license.status === 'trial'
+                  ? 'bg-indigo-100 text-indigo-700'
+                  : tenant.license.status === 'expiring'
+                    ? 'bg-sky-100 text-sky-700'
+                    : 'bg-slate-100 text-slate-600'
+            }`}
+          >
+            {tenant.license.status}
+          </span>
+          {tenant.license.expiresAt && (
+            <span className="text-xs text-slate-500">Expires {tenant.license.expiresAt}</span>
+          )}
+          {tenant.license.userLimit > 0 && <span className="text-xs text-slate-500">{tenant.license.userLimit} seats</span>}
+        </div>
+      )}
 
       {error && (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>

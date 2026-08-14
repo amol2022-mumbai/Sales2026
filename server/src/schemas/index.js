@@ -687,6 +687,11 @@ export const createPlanSchema = z.object({
   priceMonthly: z.number().nonnegative().default(0),
   sortOrder: z.number().int().default(0),
   isActive: z.boolean().default(true),
+  storageLimitMb: z.number().int().min(-1).default(-1),
+  exportEnabled: z.boolean().default(true),
+  apiEnabled: z.boolean().default(false),
+  licenseDurationDays: z.number().int().min(0).default(0),
+  trialDays: z.number().int().min(0).default(0),
 });
 
 export const updatePlanSchema = z.object({
@@ -697,9 +702,14 @@ export const updatePlanSchema = z.object({
   priceMonthly: z.number().nonnegative().optional(),
   sortOrder: z.number().int().optional(),
   isActive: z.boolean().optional(),
+  storageLimitMb: z.number().int().min(-1).optional(),
+  exportEnabled: z.boolean().optional(),
+  apiEnabled: z.boolean().optional(),
+  licenseDurationDays: z.number().int().min(0).optional(),
+  trialDays: z.number().int().min(0).optional(),
 });
 
-export const licenseStatuses = ['active', 'expired', 'suspended', 'trial'];
+export const licenseStatuses = ['active', 'trial', 'expired', 'suspended', 'cancelled'];
 
 export const upsertLicenseSchema = z.object({
   planId: z.number().int().positive().nullable().optional(),
@@ -708,6 +718,9 @@ export const upsertLicenseSchema = z.object({
   expiresAt: isoDate,
   userLimit: z.number().int().min(-1).nullable().optional(),
   modules: z.array(z.string().trim().min(1)).nullable().optional(),
+  storageLimitMb: z.number().int().min(-1).nullable().optional(),
+  exportEnabled: z.boolean().nullable().optional(),
+  apiEnabled: z.boolean().nullable().optional(),
 });
 
 export const listClientsQuerySchema = paginationQuerySchema.extend({

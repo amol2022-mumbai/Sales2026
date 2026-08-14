@@ -40,6 +40,11 @@ function planToJson(p) {
     priceMonthly: p.price_monthly,
     sortOrder: p.sort_order,
     isActive: Boolean(p.is_active),
+    storageLimitMb: p.storage_limit_mb,
+    exportEnabled: Boolean(p.export_enabled),
+    apiEnabled: Boolean(p.api_enabled),
+    licenseDurationDays: p.license_duration_days,
+    trialDays: p.trial_days,
     createdAt: p.created_at,
     updatedAt: p.updated_at,
   };
@@ -82,6 +87,9 @@ function licenseToJson(l, companyId) {
     expiresAt: l.expires_at,
     userLimit: l.user_limit,
     modules: parseJsonModules(l.modules),
+    storageLimitMb: l.storage_limit_mb ?? null,
+    exportEnabled: l.export_enabled == null ? null : Boolean(l.export_enabled),
+    apiEnabled: l.api_enabled == null ? null : Boolean(l.api_enabled),
     createdAt: l.created_at,
     updatedAt: l.updated_at,
   };
@@ -115,8 +123,20 @@ export const listClients = asyncHandler(async (req, res) => {
   const clients = rows.map((c) => {
     const license = db.prepare('SELECT * FROM licenses WHERE company_id = ?').get(c.id);
     const userCount = db.prepare("SELECT COUNT(*) AS c FROM users WHERE company_id = ? AND status != 'inactive'").get(c.id).c;
-    const { status: licenseStatus, expiresAt } = resolveLicense(db, c.id);
-    return { ...companyToJson(c), license: licenseToJson(license, c.id), licenseStatus, licenseExpiresAt: expiresAt, userCount };
+    const { status: licenseStatus, expiresAt, plan, moduleKeys, storageLimitMb, exportEnabled, apiEnabled } = resolveLicense(db, c.id);
+    return {
+      ...companyToJson(c),
+      license: licenseToJson(license, c.id),
+      licenseStatus,
+      licenseExpiresAt: expiresAt,
+      planName: plan?.name || null,
+      planKey: plan?.key || null,
+      userCount,
+      enabledFeatures: moduleKeys == null ? null : [...moduleKeys, ...CORE_MODULES].sort(),
+      storageLimitMb,
+      exportEnabled: exportEnabled !== false,
+      apiEnabled: apiEnabled !== false,
+    };
   });
 
   return paginated(res, clients, { page, pageSize, total });
@@ -332,8 +352,8 @@ export const createPlan = asyncHandler(async (req, res) => {
   if (existing) throw conflict('A plan with this key already exists');
 
   const result = db.prepare(
-    `INSERT INTO plans (key, name, description, user_limit, modules, price_monthly, sort_order, is_active)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO plans (key, name, description, user_limit, modules, price_monthly, sort_order, is_active, storage_limit_mb, export_enabled, api_enabled, license_duration_days, trial_days)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     req.body.key,
     req.body.name,
@@ -342,7 +362,12 @@ export const createPlan = asyncHandler(async (req, res) => {
     req.body.modules != null ? JSON.stringify(req.body.modules) : null,
     req.body.priceMonthly ?? 0,
     req.body.sortOrder ?? 0,
-    req.body.isActive ? 1 : 0
+    req.body.isActive ? 1 : 0,
+    req.body.storageLimitMb ?? -1,
+    req.body.exportEnabled === false ? 0 : 1,
+    req.body.apiEnabled ? 1 : 0,
+    req.body.licenseDurationDays ?? 0,
+    req.body.trialDays ?? 0
   );
 
   req.audit?.('plan.create', { entityType: 'plan', entityId: Number(result.lastInsertRowid), metadata: { key: req.body.key } });
@@ -364,6 +389,9 @@ export const updatePlan = asyncHandler(async (req, res) => {
     userLimit: 'user_limit',
     priceMonthly: 'price_monthly',
     sortOrder: 'sort_order',
+    storageLimitMb: 'storage_limit_mb',
+    licenseDurationDays: 'license_duration_days',
+    trialDays: 'trial_days',
   };
   for (const [input, column] of Object.entries(fields)) {
     if (req.body[input] !== undefined) {
@@ -378,6 +406,14 @@ export const updatePlan = asyncHandler(async (req, res) => {
   if (req.body.isActive !== undefined) {
     sets.push('is_active = ?');
     values.push(req.body.isActive ? 1 : 0);
+  }
+  if (req.body.exportEnabled !== undefined) {
+    sets.push('export_enabled = ?');
+    values.push(req.body.exportEnabled ? 1 : 0);
+  }
+  if (req.body.apiEnabled !== undefined) {
+    sets.push('api_enabled = ?');
+    values.push(req.body.apiEnabled ? 1 : 0);
   }
 
   if (sets.length) {
@@ -419,19 +455,42 @@ export const getLicense = asyncHandler(async (req, res) => {
   return ok(res, licenseToJson(license));
 });
 
+function addDays(dateStr, days) {
+  if (!dateStr) return null;
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 export const upsertLicense = asyncHandler(async (req, res) => {
   const db = getDb();
   const companyId = Number(req.params.id);
   const company = db.prepare('SELECT id FROM companies WHERE id = ?').get(companyId);
   if (!company) throw notFound('Client not found');
 
+  let plan = null;
   if (req.body.planId != null) {
-    const plan = db.prepare('SELECT id FROM plans WHERE id = ?').get(req.body.planId);
+    plan = db.prepare('SELECT * FROM plans WHERE id = ?').get(req.body.planId);
     if (!plan) throw notFound('Plan not found');
   }
 
   const existing = db.prepare('SELECT id FROM licenses WHERE company_id = ?').get(companyId);
   const modulesJson = req.body.modules !== undefined ? (req.body.modules != null ? JSON.stringify(req.body.modules) : null) : undefined;
+
+  // Derive a default expiry from the plan's trial period / license duration
+  // when the caller does not provide one and the license is being provisioned
+  // (i.e. there is no existing license yet).
+  let expiresAt = req.body.expiresAt ?? null;
+  const startsAt = req.body.startsAt ?? existing?.starts_at ?? null;
+  if (!existing && req.body.expiresAt === undefined) {
+    const status = req.body.status;
+    const base = startsAt || new Date().toISOString().slice(0, 10);
+    if (status === 'trial' && plan?.trial_days > 0) {
+      expiresAt = addDays(base, plan.trial_days);
+    } else if (status === 'active' && plan?.license_duration_days > 0) {
+      expiresAt = addDays(base, plan.license_duration_days);
+    }
+  }
 
   if (existing) {
     const sets = [];
@@ -460,21 +519,36 @@ export const upsertLicense = asyncHandler(async (req, res) => {
       sets.push('modules = ?');
       values.push(modulesJson);
     }
+    if (req.body.storageLimitMb !== undefined) {
+      sets.push('storage_limit_mb = ?');
+      values.push(req.body.storageLimitMb);
+    }
+    if (req.body.exportEnabled !== undefined) {
+      sets.push('export_enabled = ?');
+      values.push(req.body.exportEnabled == null ? null : req.body.exportEnabled ? 1 : 0);
+    }
+    if (req.body.apiEnabled !== undefined) {
+      sets.push('api_enabled = ?');
+      values.push(req.body.apiEnabled == null ? null : req.body.apiEnabled ? 1 : 0);
+    }
     sets.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')");
     values.push(existing.id);
     db.prepare(`UPDATE licenses SET ${sets.join(', ')} WHERE id = ?`).run(...values);
   } else {
     db.prepare(
-      `INSERT INTO licenses (company_id, plan_id, status, starts_at, expires_at, user_limit, modules, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO licenses (company_id, plan_id, status, starts_at, expires_at, user_limit, modules, storage_limit_mb, export_enabled, api_enabled, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       companyId,
       req.body.planId ?? null,
       req.body.status,
-      req.body.startsAt ?? null,
-      req.body.expiresAt ?? null,
+      startsAt ?? null,
+      expiresAt,
       req.body.userLimit ?? null,
       modulesJson ?? null,
+      req.body.storageLimitMb ?? null,
+      req.body.exportEnabled == null ? null : req.body.exportEnabled ? 1 : 0,
+      req.body.apiEnabled == null ? null : req.body.apiEnabled ? 1 : 0,
       req.user.id
     );
   }
@@ -673,6 +747,7 @@ export const platformDashboard = asyncHandler(async (req, res) => {
         trial: licenseByStatus.trial || 0,
         expired: licenseByStatus.expired || 0,
         suspended: licenseByStatus.suspended || 0,
+        cancelled: licenseByStatus.cancelled || 0,
         expiringSoon,
       },
       mrr,

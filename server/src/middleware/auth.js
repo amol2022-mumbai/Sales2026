@@ -1,7 +1,7 @@
 import { verifyToken } from '../lib/jwt.js';
 import { unauthorized, forbidden } from '../lib/httpError.js';
 import { getUserContext } from '../services/userService.js';
-import { loadTenant, assertLicenseActive, assertModuleEnabled } from '../services/licenseService.js';
+import { loadTenant, assertLicenseActive, assertModuleEnabled, assertExportEnabled, assertApiEnabled } from '../services/licenseService.js';
 
 /**
  * Authenticate the request using a Bearer JWT and attach the user context.
@@ -76,4 +76,35 @@ export function requireModule(moduleKey) {
       return next(err);
     }
   };
+}
+
+/**
+ * Guard that the client's plan/license permits data export. No-op for super
+ * admins and tenants without an explicit entitlement (self-hosted behaviour).
+ */
+export function requireExport(req, _res, next) {
+  if (!req.user) return next(unauthorized());
+  if (req.user.isSuperAdmin) return next();
+  try {
+    assertExportEnabled(req.tenant);
+    return next();
+  } catch (err) {
+    return next(err);
+  }
+}
+
+/**
+ * Guard that the client's plan/license permits API & integration access
+ * (external service calls such as the AI assistant provider). No-op for super
+ * admins and tenants without an explicit entitlement.
+ */
+export function requireApiAccess(req, _res, next) {
+  if (!req.user) return next(unauthorized());
+  if (req.user.isSuperAdmin) return next();
+  try {
+    assertApiEnabled(req.tenant);
+    return next();
+  } catch (err) {
+    return next(err);
+  }
 }

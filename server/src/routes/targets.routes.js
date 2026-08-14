@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticate, requireModule } from '../middleware/auth.js';
+import { authenticate, requireModule, requireExport } from '../middleware/auth.js';
 import { authorize } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
 import {
@@ -34,7 +34,7 @@ router.get('/dashboard', authorize('targets:view'), validate(targetsDashboardQue
 router.get('/meta', authorize('targets:view'), targetsMeta);
 router.get('/scorecard', authorize('targets:view'), validate(targetScorecardQuerySchema, 'query'), targetsScorecard);
 router.get('/compare', authorize('targets:view'), validate(targetCompareQuerySchema, 'query'), targetsCompare);
-router.get('/export', authorize('targets:export'), validate(exportTargetsQuerySchema, 'query'), exportTargets);
+router.get('/export', requireExport, authorize('targets:export'), validate(exportTargetsQuerySchema, 'query'), exportTargets);
 router.post('/', authorize('targets:create'), validate(createTargetSchema), createTarget);
 router.get('/:id', authorize('targets:view'), validate(idParamSchema, 'params'), getTarget);
 router.put('/:id', authorize('targets:edit'), validate(idParamSchema, 'params'), validate(updateTargetSchema), updateTarget);

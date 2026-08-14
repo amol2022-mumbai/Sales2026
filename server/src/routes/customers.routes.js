@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticate, requireModule } from '../middleware/auth.js';
+import { authenticate, requireModule, requireExport } from '../middleware/auth.js';
 import { authorize } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
 import {
@@ -39,7 +39,7 @@ router.use(authenticate, requireModule('customers'));
 router.get('/', authorize('customers:view'), validate(listCustomersQuerySchema, 'query'), listCustomers);
 router.get('/dashboard', authorize('customers:view'), customerDashboard);
 router.get('/meta', authorize('customers:view'), customerMeta);
-router.get('/export', authorize('customers:export'), validate(exportCustomersQuerySchema, 'query'), exportCustomers);
+router.get('/export', requireExport, authorize('customers:export'), validate(exportCustomersQuerySchema, 'query'), exportCustomers);
 router.post('/import', authorize('customers:create'), validate(importCustomersSchema), importCustomers);
 router.post('/convert', authorize('customers:create'), validate(convertLeadToCustomerSchema), convertLeadToCustomer);
 router.post('/bulk-assign', authorize('customers:assign'), validate(bulkAssignCustomersSchema), bulkAssignCustomers);

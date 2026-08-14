@@ -45,17 +45,22 @@ CREATE INDEX IF NOT EXISTS idx_companies_status ON companies(status);
 -- can be overridden per-license.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS plans (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  key           TEXT    NOT NULL UNIQUE,
-  name          TEXT    NOT NULL,
-  description   TEXT,
-  user_limit    INTEGER NOT NULL DEFAULT -1,
-  modules       TEXT,
-  price_monthly REAL    NOT NULL DEFAULT 0,
-  sort_order    INTEGER NOT NULL DEFAULT 0,
-  is_active     INTEGER NOT NULL DEFAULT 1,
-  created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  updated_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+  key                   TEXT    NOT NULL UNIQUE,
+  name                  TEXT    NOT NULL,
+  description           TEXT,
+  user_limit            INTEGER NOT NULL DEFAULT -1,
+  modules               TEXT,
+  price_monthly         REAL    NOT NULL DEFAULT 0,
+  sort_order            INTEGER NOT NULL DEFAULT 0,
+  is_active             INTEGER NOT NULL DEFAULT 1,
+  storage_limit_mb      INTEGER NOT NULL DEFAULT -1,
+  export_enabled        INTEGER NOT NULL DEFAULT 1,
+  api_enabled           INTEGER NOT NULL DEFAULT 0,
+  license_duration_days INTEGER NOT NULL DEFAULT 0,
+  trial_days            INTEGER NOT NULL DEFAULT 0,
+  created_at            TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at            TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_plans_active ON plans(is_active, sort_order);
@@ -66,17 +71,20 @@ CREATE INDEX IF NOT EXISTS idx_plans_active ON plans(is_active, sort_order);
 -- `modules` override the plan defaults when set (NULL = inherit plan).
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS licenses (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  company_id  INTEGER NOT NULL UNIQUE REFERENCES companies(id) ON DELETE CASCADE,
-  plan_id     INTEGER REFERENCES plans(id) ON DELETE SET NULL,
-  status      TEXT    NOT NULL DEFAULT 'active' CHECK (status IN ('active','expired','suspended','trial')),
-  starts_at   TEXT,
-  expires_at  TEXT,
-  user_limit  INTEGER,
-  modules     TEXT,
-  created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
-  created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  company_id       INTEGER NOT NULL UNIQUE REFERENCES companies(id) ON DELETE CASCADE,
+  plan_id          INTEGER REFERENCES plans(id) ON DELETE SET NULL,
+  status           TEXT    NOT NULL DEFAULT 'active' CHECK (status IN ('active','expired','suspended','trial','cancelled')),
+  starts_at        TEXT,
+  expires_at       TEXT,
+  user_limit       INTEGER,
+  modules          TEXT,
+  storage_limit_mb INTEGER,
+  export_enabled   INTEGER,
+  api_enabled      INTEGER,
+  created_by       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_licenses_plan ON licenses(plan_id);

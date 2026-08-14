@@ -84,8 +84,8 @@ export function seedDatabase(db = getDb()) {
 
   // -- Default plans --------------------------------------------------------
   const insertPlan = db.prepare(`
-    INSERT INTO plans (key, name, description, user_limit, modules, price_monthly, sort_order, is_active)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+    INSERT INTO plans (key, name, description, user_limit, modules, price_monthly, sort_order, is_active, storage_limit_mb, export_enabled, api_enabled, license_duration_days, trial_days)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
     ON CONFLICT(key) DO UPDATE SET
       name = excluded.name,
       description = excluded.description,
@@ -93,6 +93,11 @@ export function seedDatabase(db = getDb()) {
       modules = excluded.modules,
       price_monthly = excluded.price_monthly,
       sort_order = excluded.sort_order,
+      storage_limit_mb = excluded.storage_limit_mb,
+      export_enabled = excluded.export_enabled,
+      api_enabled = excluded.api_enabled,
+      license_duration_days = excluded.license_duration_days,
+      trial_days = excluded.trial_days,
       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
   `);
   const DEFAULT_PLANS = [
@@ -104,6 +109,11 @@ export function seedDatabase(db = getDb()) {
       modules: ['dashboard', 'leads', 'customers', 'pipeline', 'followups'],
       price: 0,
       sort: 1,
+      storageLimitMb: 1024,
+      exportEnabled: false,
+      apiEnabled: false,
+      licenseDurationDays: 365,
+      trialDays: 14,
     },
     {
       key: 'professional',
@@ -113,6 +123,11 @@ export function seedDatabase(db = getDb()) {
       modules: ['dashboard', 'leads', 'customers', 'pipeline', 'followups', 'sales', 'targets', 'reports', 'ai_assistant'],
       price: 49,
       sort: 2,
+      storageLimitMb: 10240,
+      exportEnabled: true,
+      apiEnabled: true,
+      licenseDurationDays: 365,
+      trialDays: 14,
     },
     {
       key: 'enterprise',
@@ -122,6 +137,11 @@ export function seedDatabase(db = getDb()) {
       modules: null,
       price: 99,
       sort: 3,
+      storageLimitMb: -1,
+      exportEnabled: true,
+      apiEnabled: true,
+      licenseDurationDays: 0,
+      trialDays: 0,
     },
     {
       key: 'custom',
@@ -131,6 +151,11 @@ export function seedDatabase(db = getDb()) {
       modules: null,
       price: 0,
       sort: 4,
+      storageLimitMb: -1,
+      exportEnabled: true,
+      apiEnabled: true,
+      licenseDurationDays: 0,
+      trialDays: 0,
     },
   ];
   for (const plan of DEFAULT_PLANS) {
@@ -141,7 +166,12 @@ export function seedDatabase(db = getDb()) {
       plan.userLimit,
       plan.modules ? JSON.stringify(plan.modules) : null,
       plan.price,
-      plan.sort
+      plan.sort,
+      plan.storageLimitMb,
+      plan.exportEnabled ? 1 : 0,
+      plan.apiEnabled ? 1 : 0,
+      plan.licenseDurationDays,
+      plan.trialDays
     );
   }
 

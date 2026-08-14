@@ -9,7 +9,7 @@ import Modal from '../components/ui/Modal.jsx';
 import Spinner from '../components/ui/Spinner.jsx';
 import { platformSectionFromPath } from '../lib/platformNavigation.jsx';
 
-const LICENSE_STATUS_TONES = { active: 'green', trial: 'indigo', expired: 'rose', suspended: 'amber' };
+const LICENSE_STATUS_TONES = { active: 'green', trial: 'indigo', expiring: 'sky', expired: 'rose', suspended: 'amber', cancelled: 'slate' };
 const CLIENT_STATUS_TONES = { active: 'green', inactive: 'slate', suspended: 'amber' };
 
 function statusBadge(status) {
@@ -113,7 +113,8 @@ function DashboardTab() {
             { label: 'Trial', value: t.license?.trial ?? 0, tone: 'indigo' },
             { label: 'Expired', value: t.license?.expired ?? 0, tone: 'rose' },
             { label: 'Suspended', value: t.license?.suspended ?? 0, tone: 'amber' },
-            { label: 'Expiring soon', value: t.license?.expiringSoon ?? 0, tone: 'slate' },
+            { label: 'Cancelled', value: t.license?.cancelled ?? 0, tone: 'slate' },
+            { label: 'Expiring soon', value: t.license?.expiringSoon ?? 0, tone: 'sky' },
           ].map((k) => (
             <div key={k.label} className="flex items-baseline gap-2">
               <p className="text-2xl font-semibold text-slate-900">{count(k.value)}</p>
@@ -478,7 +479,20 @@ function PlansTab() {
 
   function openCreate() {
     setEditing({ id: null });
-    setForm({ key: '', name: '', description: '', userLimit: -1, priceMonthly: 0, isActive: true, modules: null });
+    setForm({
+      key: '',
+      name: '',
+      description: '',
+      userLimit: -1,
+      priceMonthly: 0,
+      isActive: true,
+      modules: null,
+      storageLimitMb: -1,
+      exportEnabled: true,
+      apiEnabled: false,
+      licenseDurationDays: 0,
+      trialDays: 0,
+    });
   }
 
   function openEdit(p) {
@@ -490,6 +504,11 @@ function PlansTab() {
       priceMonthly: p.priceMonthly ?? 0,
       isActive: p.isActive !== false,
       modules: p.modules ?? null,
+      storageLimitMb: p.storageLimitMb ?? -1,
+      exportEnabled: p.exportEnabled !== false,
+      apiEnabled: p.apiEnabled === true,
+      licenseDurationDays: p.licenseDurationDays ?? 0,
+      trialDays: p.trialDays ?? 0,
     });
   }
 
@@ -501,6 +520,9 @@ function PlansTab() {
         ...form,
         userLimit: Number(form.userLimit),
         priceMonthly: Number(form.priceMonthly),
+        storageLimitMb: Number(form.storageLimitMb),
+        licenseDurationDays: Number(form.licenseDurationDays),
+        trialDays: Number(form.trialDays),
       };
       if (editing.id) await adminApi.plans.update(editing.id, payload);
       else await adminApi.plans.create(payload);
@@ -545,6 +567,12 @@ function PlansTab() {
             <p className="mt-3 text-2xl font-bold text-slate-900">${p.priceMonthly}<span className="text-sm font-normal text-slate-400">/mo</span></p>
             <p className="mt-2 text-sm text-slate-500">{p.userLimit < 0 ? 'Unlimited users' : `${p.userLimit} users`}</p>
             <p className="mt-1 text-xs text-slate-400">{p.modules == null ? 'All modules' : `${p.modules.length} modules`}</p>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {p.exportEnabled !== false && <Badge tone="green">Export</Badge>}
+              {p.apiEnabled === true && <Badge tone="indigo">API</Badge>}
+              {p.storageLimitMb >= 0 && <Badge tone="slate">{p.storageLimitMb} MB storage</Badge>}
+              {p.trialDays > 0 && <Badge tone="slate">{p.trialDays}d trial</Badge>}
+            </div>
             {p.description && <p className="mt-2 text-xs text-slate-500">{p.description}</p>}
             <button type="button" className="mt-3 text-sm font-medium text-brand-600 hover:text-brand-700" onClick={() => openEdit(p)}>
               Edit
@@ -579,6 +607,20 @@ function PlansTab() {
               <input type="number" className="input" value={form.priceMonthly} onChange={update('priceMonthly')} />
             </div>
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Storage limit MB (-1 = unlimited)</label>
+              <input type="number" className="input" value={form.storageLimitMb} onChange={update('storageLimitMb')} />
+            </div>
+            <div>
+              <label className="label">License duration (days, 0 = none)</label>
+              <input type="number" className="input" value={form.licenseDurationDays} onChange={update('licenseDurationDays')} />
+            </div>
+          </div>
+          <div>
+            <label className="label">Trial period (days, 0 = none)</label>
+            <input type="number" className="input" value={form.trialDays} onChange={update('trialDays')} />
+          </div>
           <div>
             <label className="label">Modules (empty = all)</label>
             <ModulePicker
@@ -587,10 +629,20 @@ function PlansTab() {
               onChange={(mods) => setForm((f) => ({ ...f, modules: mods.length ? mods : null }))}
             />
           </div>
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input type="checkbox" className="h-4 w-4" checked={form.isActive !== false} onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))} />
-            Active
-          </label>
+          <div className="flex flex-col gap-2">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" className="h-4 w-4" checked={form.exportEnabled !== false} onChange={(e) => setForm((f) => ({ ...f, exportEnabled: e.target.checked }))} />
+              Allow data export
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" className="h-4 w-4" checked={form.apiEnabled === true} onChange={(e) => setForm((f) => ({ ...f, apiEnabled: e.target.checked }))} />
+              API &amp; integration access
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" className="h-4 w-4" checked={form.isActive !== false} onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))} />
+              Active
+            </label>
+          </div>
         </div>
         <div className="mt-4 flex justify-end gap-3">
           <button type="button" className="btn-secondary" onClick={() => setEditing(null)}>Cancel</button>
@@ -643,6 +695,9 @@ function LicensesTab() {
       expiresAt: l.expiresAt || '',
       userLimit: l.userLimit ?? '',
       modules: l.modules ?? [],
+      storageLimitMb: l.storageLimitMb ?? '',
+      exportEnabled: l.exportEnabled ?? '',
+      apiEnabled: l.apiEnabled ?? '',
     });
   }
 
@@ -657,6 +712,9 @@ function LicensesTab() {
         expiresAt: form.expiresAt || null,
         userLimit: form.userLimit === '' ? null : Number(form.userLimit),
         modules: form.modules,
+        storageLimitMb: form.storageLimitMb === '' ? null : Number(form.storageLimitMb),
+        exportEnabled: form.exportEnabled === '' ? null : form.exportEnabled === 'true' || form.exportEnabled === true,
+        apiEnabled: form.apiEnabled === '' ? null : form.apiEnabled === 'true' || form.apiEnabled === true,
       };
       await adminApi.licenses.upsert(editing.id, payload);
       setEditing(null);
@@ -728,7 +786,7 @@ function LicensesTab() {
             <div>
               <label className="label">Status</label>
               <select className="input" value={form.status} onChange={update('status')}>
-                {['active', 'trial', 'expired', 'suspended'].map((s) => (
+                {['active', 'trial', 'expired', 'suspended', 'cancelled'].map((s) => (
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
@@ -747,6 +805,28 @@ function LicensesTab() {
           <div>
             <label className="label">User limit (blank = inherit plan)</label>
             <input type="number" className="input" value={form.userLimit} onChange={update('userLimit')} />
+          </div>
+          <div>
+            <label className="label">Storage limit MB (blank = inherit plan)</label>
+            <input type="number" className="input" value={form.storageLimitMb} onChange={update('storageLimitMb')} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Export (blank = inherit plan)</label>
+              <select className="input" value={form.exportEnabled} onChange={update('exportEnabled')}>
+                <option value="">Inherit</option>
+                <option value="true">Enabled</option>
+                <option value="false">Disabled</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">API access (blank = inherit plan)</label>
+              <select className="input" value={form.apiEnabled} onChange={update('apiEnabled')}>
+                <option value="">Inherit</option>
+                <option value="true">Enabled</option>
+                <option value="false">Disabled</option>
+              </select>
+            </div>
           </div>
           <div>
             <label className="label">Modules (blank = inherit plan)</label>
@@ -1046,18 +1126,162 @@ function SubscriptionsTab() {
 // ---------------------------------------------------------------------------
 // Placeholder platform sections (no new business features implemented)
 // ---------------------------------------------------------------------------
+function FeatureEntitlementsTab() {
+  const [clients, setClients] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await adminApi.clients.list({ pageSize: 500 });
+      setClients(res.data || []);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (loading) {
+    return (
+      <div className="flex h-40 items-center justify-center">
+        <Spinner className="h-7 w-7 text-brand-600" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
+
+      <Card className="overflow-hidden">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-4 py-3">Tenant</th>
+              <th className="px-4 py-3">Plan</th>
+              <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Modules</th>
+              <th className="px-4 py-3">Export</th>
+              <th className="px-4 py-3">API</th>
+              <th className="px-4 py-3">Storage</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {clients.map((c) => (
+              <tr key={c.id} className="hover:bg-slate-50">
+                <td className="px-4 py-3 font-medium text-slate-800">{c.name}</td>
+                <td className="px-4 py-3 text-slate-500">{c.planName || '—'}</td>
+                <td className="px-4 py-3">{statusBadge(c.licenseStatus || 'active')}</td>
+                <td className="px-4 py-3 text-slate-600">
+                  {c.enabledFeatures == null ? 'All' : `${c.enabledFeatures.length} enabled`}
+                </td>
+                <td className="px-4 py-3">
+                  <Badge tone={c.exportEnabled ? 'green' : 'slate'}>{c.exportEnabled ? 'Enabled' : 'Disabled'}</Badge>
+                </td>
+                <td className="px-4 py-3">
+                  <Badge tone={c.apiEnabled ? 'indigo' : 'slate'}>{c.apiEnabled ? 'Enabled' : 'Disabled'}</Badge>
+                </td>
+                <td className="px-4 py-3 text-slate-600">{c.storageLimitMb < 0 ? 'Unlimited' : `${c.storageLimitMb} MB`}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+    </div>
+  );
+}
+
+function UsageAndLimitsTab() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    adminApi
+      .dashboard()
+      .then((d) => active && setData(d))
+      .catch((e) => active && setError(e.message))
+      .finally(() => active && setLoading(false));
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex h-40 items-center justify-center">
+        <Spinner className="h-7 w-7 text-brand-600" />
+      </div>
+    );
+  }
+
+  const companies = data?.companies || [];
+
+  return (
+    <div className="space-y-4">
+      {error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
+
+      <Card className="overflow-hidden">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-4 py-3">Tenant</th>
+              <th className="px-4 py-3">Plan</th>
+              <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3 w-56">Seat usage</th>
+              <th className="px-4 py-3">Leads</th>
+              <th className="px-4 py-3">Customers</th>
+              <th className="px-4 py-3">Won revenue</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {companies.map((c) => {
+              const pct = c.userLimitUtilizationPct;
+              return (
+                <tr key={c.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-3 font-medium text-slate-800">{c.name}</td>
+                  <td className="px-4 py-3 text-slate-500">{c.planName || '—'}</td>
+                  <td className="px-4 py-3">{statusBadge(c.licenseStatus || 'active')}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+                        <div
+                          className="h-full rounded-full bg-brand-500"
+                          style={{ width: `${pct == null ? 0 : Math.min(100, pct)}%` }}
+                        />
+                      </div>
+                      <span className="text-xs tabular-nums text-slate-500">
+                        {c.userCount}
+                        {c.userLimit > 0 ? ` / ${c.userLimit}` : ''}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">{count(c.leadCount)}</td>
+                  <td className="px-4 py-3 text-slate-600">{count(c.customerCount)}</td>
+                  <td className="px-4 py-3 text-slate-600">{currency(c.wonRevenue)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Card>
+    </div>
+  );
+}
+
 const PLACEHOLDER_SECTIONS = {
   tenant_users: {
     title: 'Tenant Users',
     description: 'Cross-tenant user directory with role, status and last active details will appear here.',
-  },
-  entitlements: {
-    title: 'Feature Entitlements',
-    description: 'Per-tenant feature and module entitlements will appear here.',
-  },
-  usage: {
-    title: 'Usage & Limits',
-    description: 'Tenant-level usage consumption against plan limits will appear here.',
   },
   analytics: {
     title: 'Tenant Analytics',
@@ -1114,6 +1338,8 @@ export default function AdminPage() {
     plans: { title: 'Plans', description: 'Define subscription plans, pricing and included modules.' },
     licenses: { title: 'Licenses', description: 'Issue and manage tenant licenses, status and limits.' },
     subscriptions: { title: 'Subscriptions', description: 'Subscription lifecycle, renewals and billing records across all tenants.' },
+    entitlements: { title: 'Feature Entitlements', description: 'Per-tenant plan entitlements: modules, export, API and storage access.' },
+    usage: { title: 'Usage & Limits', description: 'Tenant-level seat usage and activity against plan limits.' },
   };
 
   const heading = headings[section];
@@ -1132,6 +1358,8 @@ export default function AdminPage() {
       {section === 'plans' && <PlansTab />}
       {section === 'licenses' && <LicensesTab />}
       {section === 'subscriptions' && <SubscriptionsTab />}
+      {section === 'entitlements' && <FeatureEntitlementsTab />}
+      {section === 'usage' && <UsageAndLimitsTab />}
       {PLACEHOLDER_SECTIONS[section] && <PlaceholderSection sectionKey={section} />}
     </div>
   );

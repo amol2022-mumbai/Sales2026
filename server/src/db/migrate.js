@@ -18,6 +18,47 @@ export function ensureColumn(db, table, column, ddl) {
 }
 
 /**
+ * Rebuild the `licenses` table when it was created before the `cancelled`
+ * lifecycle state (and the per-license entitlement overrides) were introduced.
+ * SQLite cannot alter a CHECK constraint, so the table is recreated and data
+ * copied over. Nothing references `licenses`, so this is safe.
+ */
+export function migrateLicensesSchema(db) {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'licenses'").get();
+  if (!row || !row.sql || row.sql.includes("'cancelled'")) return;
+
+  db.exec('ALTER TABLE licenses RENAME TO licenses_old');
+  db.exec(`
+    CREATE TABLE licenses (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id       INTEGER NOT NULL UNIQUE REFERENCES companies(id) ON DELETE CASCADE,
+      plan_id          INTEGER REFERENCES plans(id) ON DELETE SET NULL,
+      status           TEXT    NOT NULL DEFAULT 'active' CHECK (status IN ('active','expired','suspended','trial','cancelled')),
+      starts_at        TEXT,
+      expires_at       TEXT,
+      user_limit       INTEGER,
+      modules          TEXT,
+      storage_limit_mb INTEGER,
+      export_enabled   INTEGER,
+      api_enabled      INTEGER,
+      created_by       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+  `);
+  db.exec(`
+    INSERT INTO licenses (id, company_id, plan_id, status, starts_at, expires_at, user_limit, modules, created_by, created_at, updated_at)
+      SELECT id, company_id, plan_id, status, starts_at, expires_at, user_limit, modules, created_by, created_at, updated_at FROM licenses_old;
+  `);
+  db.exec('DROP TABLE licenses_old');
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_licenses_plan ON licenses(plan_id);
+    CREATE INDEX IF NOT EXISTS idx_licenses_status ON licenses(status);
+    CREATE INDEX IF NOT EXISTS idx_licenses_expiry ON licenses(expires_at);
+  `);
+}
+
+/**
  * Incremental migrations for pre-Phase-2 databases. Safe to run on fresh
  * databases too (columns already exist there, so these become no-ops).
  */
@@ -37,6 +78,18 @@ export function applyIncrementalMigrations(db) {
   ensureColumn(db, 'companies', 'industry', 'TEXT');
   ensureColumn(db, 'users', 'invitation_token', 'TEXT');
   ensureColumn(db, 'users', 'invitation_expires_at', 'TEXT');
+
+  // Plans & entitlements (Phase 13): plan-level entitlements and per-license
+  // overrides. The licenses table CHECK is expanded via a rebuild below.
+  ensureColumn(db, 'plans', 'storage_limit_mb', 'INTEGER NOT NULL DEFAULT -1');
+  ensureColumn(db, 'plans', 'export_enabled', 'INTEGER NOT NULL DEFAULT 1');
+  ensureColumn(db, 'plans', 'api_enabled', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'plans', 'license_duration_days', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'plans', 'trial_days', 'INTEGER NOT NULL DEFAULT 0');
+  migrateLicensesSchema(db);
+  ensureColumn(db, 'licenses', 'storage_limit_mb', 'INTEGER');
+  ensureColumn(db, 'licenses', 'export_enabled', 'INTEGER');
+  ensureColumn(db, 'licenses', 'api_enabled', 'INTEGER');
 
   // Indexes on columns added above must be created after the columns exist.
   db.exec(`

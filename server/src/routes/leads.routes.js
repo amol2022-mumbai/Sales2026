@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticate, requireModule } from '../middleware/auth.js';
+import { authenticate, requireModule, requireExport } from '../middleware/auth.js';
 import { authorize } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
 import {
@@ -35,7 +35,7 @@ router.use(authenticate, requireModule('leads'));
 router.get('/', authorize('leads:view'), validate(listLeadsQuerySchema, 'query'), listLeads);
 router.get('/dashboard', authorize('leads:view'), leadDashboard);
 router.get('/meta', authorize('leads:view'), leadMeta);
-router.get('/export', authorize('leads:export'), validate(exportLeadsQuerySchema, 'query'), exportLeads);
+router.get('/export', requireExport, authorize('leads:export'), validate(exportLeadsQuerySchema, 'query'), exportLeads);
 router.post('/import', authorize('leads:create'), validate(importLeadsSchema), importLeads);
 router.post('/bulk-assign', authorize('leads:assign'), validate(bulkAssignLeadsSchema), bulkAssign);
 router.post('/bulk-status', authorize('leads:edit'), validate(bulkStatusLeadsSchema), bulkStatus);

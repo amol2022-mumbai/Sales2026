@@ -10,10 +10,29 @@ import { getDb } from '../db/connection.js';
 import { ALL_MODULE_KEYS, CORE_MODULES, isValidModuleKey, isCoreModule } from '../config/modules.js';
 import { HttpError } from '../lib/httpError.js';
 
-export const LICENSE_STATUSES = ['active', 'expired', 'suspended', 'trial'];
+// Stored (persisted) license lifecycle states. `expiring` is a derived state
+// reported alongside the stored one when an active/trial license is close to
+// its expiry date.
+export const LICENSE_STATUSES = ['active', 'trial', 'expired', 'suspended', 'cancelled'];
+
+// Number of days before expiry at which an active/trial license is reported as
+// `expiring`.
+export const EXPIRING_SOON_DAYS = 30;
 
 function today() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function addDays(dateStr, days) {
+  if (!dateStr) return null;
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function parseBool(value) {
+  if (value == null) return null;
+  return value ? true : false;
 }
 
 function parseModules(value) {
@@ -33,13 +52,24 @@ function serializeModules(set) {
 
 /**
  * Resolve the effective license state for a company. Auto-transitions an
- * active/trial license whose expiry has passed to `expired`.
- * @returns {{ license: object|null, plan: object|null, status: string, expiresAt: string|null, userLimit: number, moduleKeys: string[]|null }}
+ * active/trial license whose expiry has passed to `expired`, and reports the
+ * derived `expiring` state when expiry is within EXPIRING_SOON_DAYS.
+ * @returns {{ license: object|null, plan: object|null, status: string, expiresAt: string|null, userLimit: number, moduleKeys: string[]|null, storageLimitMb: number, exportEnabled: boolean, apiEnabled: boolean }}
  */
 export function resolveLicense(db, companyId) {
   const license = db.prepare('SELECT * FROM licenses WHERE company_id = ?').get(companyId);
   if (!license) {
-    return { license: null, plan: null, status: 'active', expiresAt: null, userLimit: -1, moduleKeys: null };
+    return {
+      license: null,
+      plan: null,
+      status: 'active',
+      expiresAt: null,
+      userLimit: -1,
+      moduleKeys: null,
+      storageLimitMb: -1,
+      exportEnabled: true,
+      apiEnabled: true,
+    };
   }
 
   let status = license.status;
@@ -51,8 +81,27 @@ export function resolveLicense(db, companyId) {
     db.prepare("UPDATE licenses SET status = 'expired', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?").run(license.id);
   }
 
+  // Derived `expiring` state for active/trial licenses nearing expiry.
+  if (status === 'active' || status === 'trial') {
+    if (license.expires_at) {
+      const horizon = addDays(today(), EXPIRING_SOON_DAYS);
+      if (license.expires_at <= horizon && license.expires_at >= today()) {
+        status = 'expiring';
+      }
+    }
+  }
+
   const userLimit = license.user_limit != null ? license.user_limit : plan?.user_limit != null ? plan.user_limit : -1;
   const moduleKeys = license.modules != null ? parseModules(license.modules) : plan?.modules != null ? parseModules(plan.modules) : null;
+
+  const storageLimitMb =
+    license.storage_limit_mb != null
+      ? license.storage_limit_mb
+      : plan?.storage_limit_mb != null
+        ? plan.storage_limit_mb
+        : -1;
+  const exportEnabled = parseBool(license.export_enabled) ?? (plan ? Boolean(plan.export_enabled) : true);
+  const apiEnabled = parseBool(license.api_enabled) ?? (plan ? Boolean(plan.api_enabled) : true);
 
   return {
     license,
@@ -62,6 +111,9 @@ export function resolveLicense(db, companyId) {
     startsAt: license.starts_at,
     userLimit,
     moduleKeys: moduleKeys ? moduleKeys.filter(isValidModuleKey) : null,
+    storageLimitMb,
+    exportEnabled,
+    apiEnabled,
   };
 }
 
@@ -81,7 +133,17 @@ export function isModuleEnabled(db, companyId, key) {
 }
 
 export function isLicenseActive(status) {
-  return status === 'active' || status === 'trial';
+  return status === 'active' || status === 'trial' || status === 'expiring';
+}
+
+export function isExportEnabled(tenant) {
+  if (!tenant) return true; // no tenant (self-hosted) -> enabled
+  return tenant.exportEnabled !== false;
+}
+
+export function isApiEnabled(tenant) {
+  if (!tenant) return true; // no tenant (self-hosted) -> enabled
+  return tenant.apiEnabled !== false;
 }
 
 /**
@@ -117,6 +179,9 @@ export function assertLicenseActive(tenant) {
   if (tenant.status === 'suspended') {
     throw new HttpError(403, 'This account is suspended. Please contact support.', { code: 'LICENSE_SUSPENDED' });
   }
+  if (tenant.status === 'cancelled') {
+    throw new HttpError(403, 'This subscription has been cancelled. Please contact support.', { code: 'LICENSE_CANCELLED' });
+  }
   if (tenant.status === 'expired') {
     throw new HttpError(403, 'This account has expired. Please renew your subscription.', { code: 'LICENSE_EXPIRED' });
   }
@@ -128,6 +193,16 @@ export function assertModuleEnabled(tenant, key) {
   if (!tenant.moduleKeys) return; // no explicit modules -> all available
   if (tenant.moduleKeys.includes(key)) return;
   throw new HttpError(403, 'This module is not enabled for your plan.', { code: 'MODULE_DISABLED' });
+}
+
+export function assertExportEnabled(tenant) {
+  if (isExportEnabled(tenant)) return;
+  throw new HttpError(403, 'Data export is not enabled for your plan.', { code: 'EXPORT_DISABLED' });
+}
+
+export function assertApiEnabled(tenant) {
+  if (isApiEnabled(tenant)) return;
+  throw new HttpError(403, 'API and integration access is not enabled for your plan.', { code: 'API_ACCESS_DISABLED' });
 }
 
 export function getUserCount(db, companyId) {
@@ -156,7 +231,7 @@ export function assertUserLimit(tenant, companyId) {
  */
 export function buildTenantPayload(tenant) {
   if (!tenant) return null;
-  const { company, plan, status, expiresAt, startsAt, userLimit, moduleKeys } = tenant;
+  const { company, plan, status, expiresAt, startsAt, userLimit, moduleKeys, storageLimitMb, exportEnabled, apiEnabled } = tenant;
   return {
     companyId: company.id,
     name: company.name,
@@ -183,6 +258,9 @@ export function buildTenantPayload(tenant) {
       expiresAt: expiresAt || null,
       userLimit,
       modules: moduleKeys ? [...moduleKeys, ...CORE_MODULES].sort() : null,
+      storageLimitMb,
+      exportEnabled: exportEnabled !== false,
+      apiEnabled: apiEnabled !== false,
     },
   };
 }
