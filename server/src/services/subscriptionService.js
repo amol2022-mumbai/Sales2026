@@ -19,12 +19,41 @@ export function subscriptionPaymentNo(id) {
 }
 
 /**
- * Sum of non-deleted payments applied to a subscription invoice.
+ * Net amount applied to a subscription invoice: sum of payment-type records
+ * minus refund-type records (soft-deleted records excluded). Refunds reduce
+ * the paid balance.
  */
 export function subscriptionInvoicePaid(db, invoiceId) {
   const row = db
-    .prepare('SELECT COALESCE(SUM(amount), 0) AS v FROM subscription_payments WHERE invoice_id = ? AND deleted_at IS NULL')
+    .prepare(
+      `SELECT COALESCE(SUM(CASE WHEN type = 'refund' THEN -amount ELSE amount END), 0) AS v
+       FROM subscription_payments WHERE invoice_id = ? AND deleted_at IS NULL`
+    )
     .get(invoiceId);
+  return Math.round(row.v * 100) / 100;
+}
+
+/**
+ * Total net payments received by a company across all of its subscription
+ * invoices (refunds subtract).
+ */
+export function subscriptionCompanyPaid(db, companyId) {
+  const row = db
+    .prepare(
+      `SELECT COALESCE(SUM(CASE WHEN type = 'refund' THEN -amount ELSE amount END), 0) AS v
+       FROM subscription_payments WHERE company_id = ? AND deleted_at IS NULL`
+    )
+    .get(companyId);
+  return Math.round(row.v * 100) / 100;
+}
+
+/**
+ * Total billed amount for a company's subscription invoices (voids excluded).
+ */
+export function subscriptionCompanyBilled(db, companyId) {
+  const row = db
+    .prepare("SELECT COALESCE(SUM(amount), 0) AS v FROM subscription_invoices WHERE company_id = ? AND status != 'Void'")
+    .get(companyId);
   return Math.round(row.v * 100) / 100;
 }
 

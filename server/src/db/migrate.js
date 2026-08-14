@@ -41,6 +41,8 @@ export function migrateLicensesSchema(db) {
       storage_limit_mb INTEGER,
       export_enabled   INTEGER,
       api_enabled      INTEGER,
+      billing_cycle    TEXT    CHECK (billing_cycle IS NULL OR billing_cycle IN ('monthly','annual')),
+      auto_renew       INTEGER NOT NULL DEFAULT 1,
       created_by       INTEGER REFERENCES users(id) ON DELETE SET NULL,
       created_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       updated_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
@@ -90,6 +92,18 @@ export function applyIncrementalMigrations(db) {
   ensureColumn(db, 'licenses', 'storage_limit_mb', 'INTEGER');
   ensureColumn(db, 'licenses', 'export_enabled', 'INTEGER');
   ensureColumn(db, 'licenses', 'api_enabled', 'INTEGER');
+
+  // Online payments & billing (Phase 14): billing cycle / auto-renew settings
+  // and provider identifiers on subscription billing records.
+  ensureColumn(db, 'plans', 'price_annual', 'REAL NOT NULL DEFAULT 0');
+  ensureColumn(db, 'licenses', 'billing_cycle', "TEXT CHECK (billing_cycle IS NULL OR billing_cycle IN ('monthly','annual'))");
+  ensureColumn(db, 'licenses', 'auto_renew', 'INTEGER NOT NULL DEFAULT 1');
+  ensureColumn(db, 'subscription_invoices', 'billing_cycle', "TEXT CHECK (billing_cycle IS NULL OR billing_cycle IN ('monthly','annual'))");
+  ensureColumn(db, 'subscription_invoices', 'provider', 'TEXT');
+  ensureColumn(db, 'subscription_invoices', 'provider_id', 'TEXT');
+  ensureColumn(db, 'subscription_payments', 'type', "TEXT NOT NULL DEFAULT 'payment' CHECK (type IN ('payment','refund'))");
+  ensureColumn(db, 'subscription_payments', 'provider', 'TEXT');
+  ensureColumn(db, 'subscription_payments', 'provider_id', 'TEXT');
 
   // Indexes on columns added above must be created after the columns exist.
   db.exec(`

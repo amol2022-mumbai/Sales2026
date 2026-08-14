@@ -13,6 +13,9 @@ import {
   inviteAdminSchema,
   createSubscriptionInvoiceSchema,
   recordSubscriptionPaymentSchema,
+  changePlanSchema,
+  renewSubscriptionSchema,
+  refundSubscriptionSchema,
 } from '../schemas/index.js';
 import {
   listClients,
@@ -37,6 +40,13 @@ import {
   getSubscription,
   createSubscriptionInvoice,
   recordSubscriptionPayment,
+  changePlanAction,
+  renewSubscriptionAction,
+  cancelSubscriptionAction,
+  reactivateSubscriptionAction,
+  refundSubscriptionAction,
+  listSubscriptionEvents,
+  listSubscriptionPayments,
 } from '../controllers/subscriptionController.js';
 import {
   adminDashboardQuerySchema,
@@ -72,6 +82,13 @@ router.get('/subscriptions', listSubscriptions);
 router.get('/subscriptions/:companyId', validate(companyIdParamSchema, 'params'), getSubscription);
 router.post('/subscriptions/:companyId/invoices', validate(companyIdParamSchema, 'params'), validate(createSubscriptionInvoiceSchema), createSubscriptionInvoice);
 router.post('/subscriptions/invoices/:id/payments', validate(idParamSchema, 'params'), validate(recordSubscriptionPaymentSchema), recordSubscriptionPayment);
+router.post('/subscriptions/:companyId/change-plan', validate(companyIdParamSchema, 'params'), validate(changePlanSchema), changePlanAction);
+router.post('/subscriptions/:companyId/renew', validate(companyIdParamSchema, 'params'), validate(renewSubscriptionSchema), renewSubscriptionAction);
+router.post('/subscriptions/:companyId/cancel', validate(companyIdParamSchema, 'params'), cancelSubscriptionAction);
+router.post('/subscriptions/:companyId/reactivate', validate(companyIdParamSchema, 'params'), reactivateSubscriptionAction);
+router.post('/subscriptions/:companyId/refund', validate(companyIdParamSchema, 'params'), validate(refundSubscriptionSchema), refundSubscriptionAction);
+router.get('/subscriptions/:companyId/events', validate(companyIdParamSchema, 'params'), listSubscriptionEvents);
+router.get('/subscriptions/:companyId/payments', validate(companyIdParamSchema, 'params'), listSubscriptionPayments);
 
 // AI Assistant configuration (status + connectivity test; never returns keys)
 router.get('/ai/status', aiConfigStatus);

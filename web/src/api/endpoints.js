@@ -34,6 +34,13 @@ export const adminApi = {
     get: (companyId) => apiFetch(`/admin/subscriptions/${companyId}`),
     createInvoice: (companyId, payload) => apiFetch(`/admin/subscriptions/${companyId}/invoices`, { method: 'POST', body: payload }),
     recordPayment: (invoiceId, payload) => apiFetch(`/admin/subscriptions/invoices/${invoiceId}/payments`, { method: 'POST', body: payload }),
+    changePlan: (companyId, payload) => apiFetch(`/admin/subscriptions/${companyId}/change-plan`, { method: 'POST', body: payload }),
+    renew: (companyId, payload = {}) => apiFetch(`/admin/subscriptions/${companyId}/renew`, { method: 'POST', body: payload }),
+    cancel: (companyId) => apiFetch(`/admin/subscriptions/${companyId}/cancel`, { method: 'POST' }),
+    reactivate: (companyId) => apiFetch(`/admin/subscriptions/${companyId}/reactivate`, { method: 'POST' }),
+    refund: (companyId, payload) => apiFetch(`/admin/subscriptions/${companyId}/refund`, { method: 'POST', body: payload }),
+    events: (companyId) => apiFetch(`/admin/subscriptions/${companyId}/events`),
+    payments: (companyId) => apiFetch(`/admin/subscriptions/${companyId}/payments`),
   },
   modules: () => apiFetch('/admin/modules'),
   dashboard: (params = {}) => {
@@ -283,4 +290,18 @@ export const aiApi = {
 export const aiAdminApi = {
   status: () => apiFetch('/admin/ai/status'),
   test: () => apiFetch('/admin/ai/test', { method: 'POST' }),
+};
+
+export const billingApi = {
+  get: () => apiFetch('/billing'),
+  plans: () => apiFetch('/billing/plans'),
+  invoices: () => apiFetch('/billing/invoices'),
+  payments: () => apiFetch('/billing/payments'),
+  events: () => apiFetch('/billing/events'),
+  checkout: (payload) => apiFetch('/billing/checkout', { method: 'POST', body: payload }),
+  changePlan: (payload) => apiFetch('/billing/change-plan', { method: 'POST', body: payload }),
+  renew: (payload = {}) => apiFetch('/billing/renew', { method: 'POST', body: payload }),
+  cancel: () => apiFetch('/billing/cancel', { method: 'POST' }),
+  reactivate: () => apiFetch('/billing/reactivate', { method: 'POST' }),
+  mockPay: (invoiceId) => apiFetch('/billing/mock-pay', { method: 'POST', body: { invoiceId } }),
 };

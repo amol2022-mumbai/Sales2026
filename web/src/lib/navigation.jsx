@@ -20,6 +20,7 @@ import {
   ScrollText,
   Settings,
   ShieldCheck,
+  CreditCard,
 } from 'lucide-react';
 
 export const NAV_SECTIONS = [
@@ -65,6 +66,7 @@ export const NAV_SECTIONS = [
     items: [
       { key: 'users', label: 'Users', path: '/users', icon: UserCog, functional: true, permission: 'users:view' },
       { key: 'roles', label: 'Roles & Permissions', path: '/roles', icon: ShieldCheck, functional: true, permission: 'roles:view' },
+      { key: 'billing', label: 'Billing', path: '/billing', icon: CreditCard, functional: true, permission: 'billing:view' },
       { key: 'notifications', label: 'Notifications', path: '/notifications', icon: Bell, permission: 'notifications:view' },
       { key: 'audit_logs', label: 'Audit Logs', path: '/audit-logs', icon: ScrollText, permission: 'audit_logs:view' },
       { key: 'settings', label: 'Settings', path: '/settings', icon: Settings, functional: true, permission: 'settings:view' },
@@ -75,7 +77,7 @@ export const NAV_SECTIONS = [
 export const ALL_NAV_ITEMS = NAV_SECTIONS.flatMap((s) => s.items);
 
 // Modules that are always visible (system/core), never gated by a license.
-const CORE_NAV_KEYS = new Set(['users', 'roles', 'notifications', 'audit_logs', 'settings']);
+const CORE_NAV_KEYS = new Set(['users', 'roles', 'notifications', 'audit_logs', 'settings', 'billing']);
 
 export function isModuleEnabledForTenant(tenant, key) {
   if (!tenant?.license?.modules) return true; // null = all modules

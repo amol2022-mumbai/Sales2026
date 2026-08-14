@@ -863,11 +863,21 @@ function SubscriptionsTab() {
   const [payForm, setPayForm] = useState({ amount: '', paymentDate: '', method: 'Bank Transfer', reference: '' });
   const [saving, setSaving] = useState(false);
 
+  const [plans, setPlans] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [payments, setPayments] = useState([]);
+  const [planId, setPlanId] = useState('');
+  const [cycle, setCycle] = useState('monthly');
+  const [refundingId, setRefundingId] = useState(null);
+  const [refundAmount, setRefundAmount] = useState('');
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      setSubs(await adminApi.subscriptions.list());
+      const [s, p] = await Promise.all([adminApi.subscriptions.list(), adminApi.plans.list()]);
+      setSubs(s);
+      setPlans(p);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -885,8 +895,18 @@ function SubscriptionsTab() {
     setError(null);
     setShowInvForm(false);
     setPayingId(null);
+    setRefundingId(null);
     try {
-      setDetail(await adminApi.subscriptions.get(sub.companyId));
+      const [d, ev, pay] = await Promise.all([
+        adminApi.subscriptions.get(sub.companyId),
+        adminApi.subscriptions.events(sub.companyId),
+        adminApi.subscriptions.payments(sub.companyId),
+      ]);
+      setDetail(d);
+      setEvents(ev);
+      setPayments(pay);
+      setPlanId(d.planId ? String(d.planId) : '');
+      setCycle(d.billingCycle || 'monthly');
     } catch (e) {
       setError(e.message);
     } finally {
@@ -931,6 +951,42 @@ function SubscriptionsTab() {
       });
       setPayingId(null);
       setPayForm({ amount: '', paymentDate: '', method: 'Bank Transfer', reference: '' });
+      await openDetail(detail);
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function lifecycle(fn) {
+    setSaving(true);
+    setError(null);
+    try {
+      await fn();
+      await openDetail({ companyId: detail.companyId });
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const changePlan = () =>
+    lifecycle(() => adminApi.subscriptions.changePlan(detail.companyId, { planId: Number(planId), billingCycle: cycle, applyImmediately: true }));
+  const renewNow = () => lifecycle(() => adminApi.subscriptions.renew(detail.companyId, { billingCycle: cycle }));
+  const cancelNow = () => lifecycle(() => adminApi.subscriptions.cancel(detail.companyId));
+  const reactivateNow = () => lifecycle(() => adminApi.subscriptions.reactivate(detail.companyId));
+
+  async function refund(invoice) {
+    setSaving(true);
+    setError(null);
+    try {
+      await adminApi.subscriptions.refund(detail.companyId, { invoiceId: invoice.id, amount: Number(refundAmount) });
+      setRefundingId(null);
+      setRefundAmount('');
       await openDetail(detail);
       await load();
     } catch (e) {
@@ -1016,6 +1072,54 @@ function SubscriptionsTab() {
               </div>
             </div>
 
+            <div className="rounded-lg border border-slate-200 p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-slate-700">Subscription lifecycle</p>
+                <div className="flex gap-2">
+                  {detail?.licenseStatus === 'cancelled' ? (
+                    <button type="button" className="btn-secondary px-3 py-1.5 text-xs" disabled={saving} onClick={reactivateNow}>
+                      Reactivate
+                    </button>
+                  ) : (
+                    <button type="button" className="btn-secondary px-3 py-1.5 text-xs text-rose-600" disabled={saving} onClick={cancelNow}>
+                      Cancel
+                    </button>
+                  )}
+                  <button type="button" className="btn-secondary px-3 py-1.5 text-xs" disabled={saving} onClick={renewNow}>
+                    Renew
+                  </button>
+                </div>
+              </div>
+              <div className="mt-2 flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="label">Plan</label>
+                  <select className="input" value={planId} onChange={(e) => setPlanId(e.target.value)}>
+                    <option value="">Select…</option>
+                    {plans.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Cycle</label>
+                  <select className="input" value={cycle} onChange={(e) => setCycle(e.target.value)}>
+                    <option value="monthly">Monthly</option>
+                    <option value="annual">Annual</option>
+                  </select>
+                </div>
+                <button type="button" className="btn-primary px-3 py-1.5 text-xs" disabled={saving || !planId} onClick={changePlan}>
+                  {saving ? <Spinner className="h-4 w-4" /> : 'Apply now'}
+                </button>
+              </div>
+              <p className="mt-2 text-xs text-slate-400">
+                Status: <span className="font-medium">{detail?.licenseStatus}</span>
+                {detail?.billingCycle && <> · Cycle: <span className="font-medium">{detail.billingCycle}</span></>}
+                {detail?.currentPrice > 0 && <> · Price: <span className="font-medium">{currency(detail.currentPrice)}</span></>}
+                {detail?.autoRenew === false && ' · auto-renew off'}
+                {detail?.failedPayments > 0 && <span className="text-rose-600"> · {detail.failedPayments} failed payment(s)</span>}
+              </p>
+            </div>
+
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium text-slate-700">Invoices</p>
               <button type="button" className="btn-secondary px-3 py-1.5 text-xs" onClick={() => setShowInvForm((v) => !v)}>
@@ -1072,12 +1176,31 @@ function SubscriptionsTab() {
                         Balance {currency(inv.balance)}
                         {inv.overdue && <span className="ml-2 text-rose-600">Overdue</span>}
                       </span>
-                      {inv.balance > 0 && inv.status !== 'Void' && (
-                        <button type="button" className="font-medium text-brand-600 hover:text-brand-700" onClick={() => setPayingId(payingId === inv.id ? null : inv.id)}>
-                          Record payment
-                        </button>
-                      )}
+                      <span className="flex items-center gap-3">
+                        {inv.balance < inv.amount && inv.status !== 'Void' && (
+                          <button type="button" className="font-medium text-rose-600 hover:text-rose-700" onClick={() => setRefundingId(refundingId === inv.id ? null : inv.id)}>
+                            Refund
+                          </button>
+                        )}
+                        {inv.balance > 0 && inv.status !== 'Void' && (
+                          <button type="button" className="font-medium text-brand-600 hover:text-brand-700" onClick={() => setPayingId(payingId === inv.id ? null : inv.id)}>
+                            Record payment
+                          </button>
+                        )}
+                      </span>
                     </div>
+
+                    {refundingId === inv.id && (
+                      <div className="mt-2 space-y-2 rounded-lg bg-rose-50 p-3">
+                        <div>
+                          <label className="label">Refund amount</label>
+                          <input type="number" className="input" value={refundAmount} onChange={(e) => setRefundAmount(e.target.value)} />
+                        </div>
+                        <button type="button" className="btn-primary" disabled={saving || !refundAmount} onClick={() => refund(inv)}>
+                          {saving ? <Spinner className="h-4 w-4" /> : 'Process refund'}
+                        </button>
+                      </div>
+                    )}
 
                     {payingId === inv.id && (
                       <div className="mt-2 space-y-2 rounded-lg bg-slate-50 p-3">
@@ -1115,6 +1238,47 @@ function SubscriptionsTab() {
               </div>
             ) : (
               <p className="text-sm text-slate-400">No billing records yet.</p>
+            )}
+
+            {payments.length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-slate-700">Payments &amp; refunds</p>
+                <div className="mt-1 divide-y divide-slate-100 rounded-lg border border-slate-200">
+                  {payments.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between p-3">
+                      <div>
+                        <p className="text-sm font-medium text-slate-800">
+                          {p.type === 'refund' ? 'Refund' : 'Payment'} — {currency(p.amount)}
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          {p.date} · {p.method || '—'}
+                          {p.provider && <> · via {p.provider}</>}
+                        </p>
+                      </div>
+                      <Badge tone={p.type === 'refund' ? 'rose' : 'green'}>{p.type}</Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {events.length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-slate-700">Payment events</p>
+                <div className="mt-1 divide-y divide-slate-100 rounded-lg border border-slate-200">
+                  {events.map((ev) => (
+                    <div key={ev.id} className="flex items-center justify-between p-3">
+                      <div>
+                        <p className="text-sm font-medium text-slate-800">{ev.type}</p>
+                        <p className="text-xs text-slate-400">
+                          {ev.createdAt} · {ev.provider}
+                        </p>
+                      </div>
+                      <Badge tone={ev.type?.includes('failed') ? 'rose' : 'slate'}>{ev.type}</Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         )}

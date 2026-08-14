@@ -39,6 +39,7 @@ const MODULES = [
   'users',
   'roles',
   'companies',
+  'billing',
 ];
 
 // Admin modules expose a `manage` capability; business modules expose the full
@@ -146,6 +147,8 @@ export const ROLE_PERMISSIONS = {
     ...admin('users', 'settings'),
     ...readonly('roles', 'audit_logs', 'notifications'),
     'notifications:edit',
+    'billing:view',
+    'billing:edit',
   ],
   sales_manager: [
     ...mod(
@@ -172,6 +175,7 @@ export const ROLE_PERMISSIONS = {
     'users:edit',
     ...readonly('roles', 'mis', 'ai_assistant', 'expenses', 'notifications', 'audit_logs'),
     'settings:view',
+    'billing:view',
   ],
   team_leader: [
     ...mod(

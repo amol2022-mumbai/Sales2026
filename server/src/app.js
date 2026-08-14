@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
 import { env } from './config/env.js';
 import apiRoutes from './routes/index.js';
+import billingWebhookRoutes from './routes/billingWebhook.routes.js';
 import { auditMiddleware } from './services/auditService.js';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
 
@@ -55,11 +56,15 @@ export function createApp() {
     })
   );
 
+  // Payment-provider webhook must run before the JSON body parser so the raw
+  // body is available for HMAC signature verification. `raw` applies only to
+  // this route.
+  app.use('/api', billingWebhookRoutes);
+
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-  if (!env.isTest) {
-    app.use(morgan(env.isProduction ? 'combined' : 'dev'));
+  if (!env.isTest) {    app.use(morgan(env.isProduction ? 'combined' : 'dev'));
   }
 
   app.use(auditMiddleware());

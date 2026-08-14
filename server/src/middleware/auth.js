@@ -1,5 +1,6 @@
 import { verifyToken } from '../lib/jwt.js';
 import { unauthorized, forbidden } from '../lib/httpError.js';
+import { HttpError } from '../lib/httpError.js';
 import { getUserContext } from '../services/userService.js';
 import { loadTenant, assertLicenseActive, assertModuleEnabled, assertExportEnabled, assertApiEnabled } from '../services/licenseService.js';
 
@@ -10,6 +11,20 @@ import { loadTenant, assertLicenseActive, assertModuleEnabled, assertExportEnabl
  * an active license for non-super-admin requests.
  */
 export function authenticate(req, _res, next) {
+  authenticateRequest(req, next, { assertLicense: true });
+}
+
+/**
+ * Like `authenticate` but does NOT reject tenants whose *license* is suspended,
+ * expired or cancelled. Used by the billing surface so a tenant can renew,
+ * reactivate or otherwise restore their subscription. Company-level status
+ * (suspended/inactive) is still enforced.
+ */
+export function authenticateAllowInactive(req, _res, next) {
+  authenticateRequest(req, next, { assertLicense: false });
+}
+
+function authenticateRequest(req, next, { assertLicense }) {
   try {
     const header = req.headers.authorization || '';
     const [scheme, token] = header.split(' ');
@@ -37,7 +52,15 @@ export function authenticate(req, _res, next) {
 
     const tenant = loadTenant(user);
     if (!user.isSuperAdmin) {
-      assertLicenseActive(tenant);
+      if (tenant?.company?.status === 'suspended') {
+        throw new HttpError(403, 'This account is suspended. Please contact support.', { code: 'TENANT_SUSPENDED' });
+      }
+      if (tenant?.company?.status === 'inactive') {
+        throw new HttpError(403, 'This account has been deactivated. Please contact support.', { code: 'TENANT_INACTIVE' });
+      }
+      if (assertLicense) {
+        assertLicenseActive(tenant);
+      }
     }
     req.tenant = tenant;
 

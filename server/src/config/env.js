@@ -49,6 +49,15 @@ export const env = {
   aiModel: process.env.AI_MODEL || '',
   aiBaseUrl: process.env.AI_BASE_URL || '',
   aiTimeoutMs: toInt(process.env.AI_TIMEOUT_MS, 30000),
+  // Online payments (Phase 14). Secrets are read server-side only and are never
+  // exposed to the frontend or the config endpoints. When no secret key is
+  // configured, checkout runs in a mock mode so the flow stays usable offline;
+  // payment state is still only ever applied from a verified webhook.
+  paymentProvider: process.env.PAYMENT_PROVIDER || 'stripe',
+  paymentMode: process.env.PAYMENT_MODE || 'test',
+  paymentSecretKey: process.env.PAYMENT_SECRET_KEY || '',
+  paymentWebhookSecret: process.env.PAYMENT_WEBHOOK_SECRET || '',
+  paymentMock: process.env.PAYMENT_MOCK === '1' || process.env.PAYMENT_MOCK === 'true',
 };
 
 export function validateEnv() {

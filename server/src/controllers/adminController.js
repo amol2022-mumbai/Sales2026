@@ -38,6 +38,7 @@ function planToJson(p) {
     userLimit: p.user_limit,
     modules: parseJsonModules(p.modules),
     priceMonthly: p.price_monthly,
+    priceAnnual: p.price_annual,
     sortOrder: p.sort_order,
     isActive: Boolean(p.is_active),
     storageLimitMb: p.storage_limit_mb,
@@ -90,6 +91,8 @@ function licenseToJson(l, companyId) {
     storageLimitMb: l.storage_limit_mb ?? null,
     exportEnabled: l.export_enabled == null ? null : Boolean(l.export_enabled),
     apiEnabled: l.api_enabled == null ? null : Boolean(l.api_enabled),
+    billingCycle: l.billing_cycle ?? null,
+    autoRenew: l.auto_renew == null ? null : Boolean(l.auto_renew),
     createdAt: l.created_at,
     updatedAt: l.updated_at,
   };
@@ -352,8 +355,8 @@ export const createPlan = asyncHandler(async (req, res) => {
   if (existing) throw conflict('A plan with this key already exists');
 
   const result = db.prepare(
-    `INSERT INTO plans (key, name, description, user_limit, modules, price_monthly, sort_order, is_active, storage_limit_mb, export_enabled, api_enabled, license_duration_days, trial_days)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO plans (key, name, description, user_limit, modules, price_monthly, price_annual, sort_order, is_active, storage_limit_mb, export_enabled, api_enabled, license_duration_days, trial_days)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     req.body.key,
     req.body.name,
@@ -361,6 +364,7 @@ export const createPlan = asyncHandler(async (req, res) => {
     req.body.userLimit ?? -1,
     req.body.modules != null ? JSON.stringify(req.body.modules) : null,
     req.body.priceMonthly ?? 0,
+    req.body.priceAnnual ?? 0,
     req.body.sortOrder ?? 0,
     req.body.isActive ? 1 : 0,
     req.body.storageLimitMb ?? -1,
@@ -388,6 +392,7 @@ export const updatePlan = asyncHandler(async (req, res) => {
     description: 'description',
     userLimit: 'user_limit',
     priceMonthly: 'price_monthly',
+    priceAnnual: 'price_annual',
     sortOrder: 'sort_order',
     storageLimitMb: 'storage_limit_mb',
     licenseDurationDays: 'license_duration_days',
@@ -531,13 +536,21 @@ export const upsertLicense = asyncHandler(async (req, res) => {
       sets.push('api_enabled = ?');
       values.push(req.body.apiEnabled == null ? null : req.body.apiEnabled ? 1 : 0);
     }
+    if (req.body.billingCycle !== undefined) {
+      sets.push('billing_cycle = ?');
+      values.push(req.body.billingCycle);
+    }
+    if (req.body.autoRenew !== undefined) {
+      sets.push('auto_renew = ?');
+      values.push(req.body.autoRenew == null ? 1 : req.body.autoRenew ? 1 : 0);
+    }
     sets.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')");
     values.push(existing.id);
     db.prepare(`UPDATE licenses SET ${sets.join(', ')} WHERE id = ?`).run(...values);
   } else {
     db.prepare(
-      `INSERT INTO licenses (company_id, plan_id, status, starts_at, expires_at, user_limit, modules, storage_limit_mb, export_enabled, api_enabled, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO licenses (company_id, plan_id, status, starts_at, expires_at, user_limit, modules, storage_limit_mb, export_enabled, api_enabled, billing_cycle, auto_renew, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       companyId,
       req.body.planId ?? null,
@@ -549,6 +562,8 @@ export const upsertLicense = asyncHandler(async (req, res) => {
       req.body.storageLimitMb ?? null,
       req.body.exportEnabled == null ? null : req.body.exportEnabled ? 1 : 0,
       req.body.apiEnabled == null ? null : req.body.apiEnabled ? 1 : 0,
+      req.body.billingCycle ?? null,
+      req.body.autoRenew == null ? 1 : req.body.autoRenew ? 1 : 0,
       req.user.id
     );
   }

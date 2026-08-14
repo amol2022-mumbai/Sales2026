@@ -19,6 +19,7 @@ import TargetsPage from './pages/TargetsPage.jsx';
 import CollectionsPage from './pages/CollectionsPage.jsx';
 import ReportsPage from './pages/ReportsPage.jsx';
 import MISPage from './pages/MISPage.jsx';
+import BillingPage from './pages/BillingPage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
 import ComingSoonPage from './pages/ComingSoonPage.jsx';
 import NotFoundPage from './pages/NotFoundPage.jsx';
@@ -50,6 +51,7 @@ export default function App() {
           <Route path="/collections" element={<CollectionsPage />} />
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/mis" element={<MISPage />} />
+          <Route path="/billing" element={<BillingPage />} />
           <Route path="/admin/*" element={<AdminPage />} />
           {comingSoonPaths.map((path) => (
             <Route key={path} path={path} element={<ComingSoonPage />} />

@@ -18,6 +18,7 @@ import collectionsRoutes from './collections.routes.js';
 import reportRoutes from './report.routes.js';
 import misRoutes from './mis.routes.js';
 import aiRoutes from './ai.routes.js';
+import billingRoutes from './billing.routes.js';
 import adminRoutes from './admin.routes.js';
 import { publicConfig } from '../controllers/configController.js';
 
@@ -43,6 +44,7 @@ api.use('/collections', collectionsRoutes);
 api.use('/reports', reportRoutes);
 api.use('/mis', misRoutes);
 api.use('/ai', aiRoutes);
+api.use('/billing', billingRoutes);
 api.use('/admin', adminRoutes);
 
 export default api;

@@ -685,6 +685,7 @@ export const createPlanSchema = z.object({
   userLimit: z.number().int().min(-1).default(-1),
   modules: z.array(z.string().trim().min(1)).nullable().optional(),
   priceMonthly: z.number().nonnegative().default(0),
+  priceAnnual: z.number().nonnegative().default(0),
   sortOrder: z.number().int().default(0),
   isActive: z.boolean().default(true),
   storageLimitMb: z.number().int().min(-1).default(-1),
@@ -700,6 +701,7 @@ export const updatePlanSchema = z.object({
   userLimit: z.number().int().min(-1).optional(),
   modules: z.array(z.string().trim().min(1)).nullable().optional(),
   priceMonthly: z.number().nonnegative().optional(),
+  priceAnnual: z.number().nonnegative().optional(),
   sortOrder: z.number().int().optional(),
   isActive: z.boolean().optional(),
   storageLimitMb: z.number().int().min(-1).optional(),
@@ -721,6 +723,8 @@ export const upsertLicenseSchema = z.object({
   storageLimitMb: z.number().int().min(-1).nullable().optional(),
   exportEnabled: z.boolean().nullable().optional(),
   apiEnabled: z.boolean().nullable().optional(),
+  billingCycle: z.enum(['monthly', 'annual']).nullable().optional(),
+  autoRenew: z.boolean().nullable().optional(),
 });
 
 export const listClientsQuerySchema = paginationQuerySchema.extend({
@@ -815,6 +819,35 @@ export const recordSubscriptionPaymentSchema = z.object({
   method: z.enum(paymentMethods).optional(),
   reference: z.string().trim().max(120).nullable().optional(),
   notes: z.string().trim().max(500).nullable().optional(),
+});
+
+// ---------------------------------------------------------------------------
+// Online billing (Phase 14) — company billing page + super admin controls.
+// ---------------------------------------------------------------------------
+export const billingCycleEnum = z.enum(['monthly', 'annual']);
+
+export const checkoutSchema = z.object({
+  planId: z.number().int().positive(),
+  billingCycle: billingCycleEnum.default('monthly'),
+});
+
+export const changePlanSchema = z.object({
+  planId: z.number().int().positive(),
+  billingCycle: billingCycleEnum.default('monthly'),
+  applyImmediately: z.boolean().optional(),
+});
+
+export const renewSubscriptionSchema = z.object({
+  billingCycle: billingCycleEnum.optional(),
+});
+
+export const refundSubscriptionSchema = z.object({
+  invoiceId: z.number().int().positive(),
+  amount: z.number().positive(),
+});
+
+export const mockPaySchema = z.object({
+  invoiceId: z.number().int().positive(),
 });
 
 // ---------------------------------------------------------------------------

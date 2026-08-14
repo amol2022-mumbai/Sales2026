@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS plans (
   user_limit            INTEGER NOT NULL DEFAULT -1,
   modules               TEXT,
   price_monthly         REAL    NOT NULL DEFAULT 0,
+  price_annual          REAL    NOT NULL DEFAULT 0,
   sort_order            INTEGER NOT NULL DEFAULT 0,
   is_active             INTEGER NOT NULL DEFAULT 1,
   storage_limit_mb      INTEGER NOT NULL DEFAULT -1,
@@ -82,6 +83,8 @@ CREATE TABLE IF NOT EXISTS licenses (
   storage_limit_mb INTEGER,
   export_enabled   INTEGER,
   api_enabled      INTEGER,
+  billing_cycle    TEXT    CHECK (billing_cycle IS NULL OR billing_cycle IN ('monthly','annual')),
+  auto_renew       INTEGER NOT NULL DEFAULT 1,
   created_by       INTEGER REFERENCES users(id) ON DELETE SET NULL,
   created_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
@@ -99,19 +102,22 @@ CREATE INDEX IF NOT EXISTS idx_licenses_expiry ON licenses(expires_at);
 -- `subscription_payments` rather than stored.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS subscription_invoices (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  invoice_no   TEXT,
-  company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  plan_id      INTEGER REFERENCES plans(id) ON DELETE SET NULL,
-  amount       REAL    NOT NULL DEFAULT 0,
-  description  TEXT,
-  period_start TEXT,
-  period_end   TEXT,
-  due_date     TEXT,
-  status       TEXT    NOT NULL DEFAULT 'Unpaid' CHECK (status IN ('Unpaid','Partial','Paid','Void')),
-  created_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
-  created_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  updated_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_no    TEXT,
+  company_id    INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  plan_id       INTEGER REFERENCES plans(id) ON DELETE SET NULL,
+  amount        REAL    NOT NULL DEFAULT 0,
+  description   TEXT,
+  period_start  TEXT,
+  period_end    TEXT,
+  due_date      TEXT,
+  status        TEXT    NOT NULL DEFAULT 'Unpaid' CHECK (status IN ('Unpaid','Partial','Paid','Void')),
+  billing_cycle TEXT    CHECK (billing_cycle IS NULL OR billing_cycle IN ('monthly','annual')),
+  provider      TEXT,
+  provider_id   TEXT,
+  created_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_sub_invoices_no ON subscription_invoices(invoice_no);
@@ -134,6 +140,9 @@ CREATE TABLE IF NOT EXISTS subscription_payments (
   method       TEXT    NOT NULL DEFAULT 'Bank Transfer',
   reference    TEXT,
   notes        TEXT,
+  type         TEXT    NOT NULL DEFAULT 'payment' CHECK (type IN ('payment','refund')),
+  provider     TEXT,
+  provider_id  TEXT,
   created_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
   deleted_at   TEXT,
   created_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
@@ -145,6 +154,31 @@ CREATE INDEX IF NOT EXISTS idx_sub_payments_company ON subscription_payments(com
 CREATE INDEX IF NOT EXISTS idx_sub_payments_invoice ON subscription_payments(invoice_id);
 CREATE INDEX IF NOT EXISTS idx_sub_payments_date ON subscription_payments(payment_date);
 CREATE INDEX IF NOT EXISTS idx_sub_payments_deleted ON subscription_payments(deleted_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sub_payments_provider ON subscription_payments(provider_id) WHERE provider_id IS NOT NULL;
+
+-- ---------------------------------------------------------------------------
+-- Subscription events: verified payment-provider webhook events, stored
+-- idempotently so retries never double-apply. `provider_event_id` is unique per
+-- provider; `status` tracks the event processing state (received/processed/
+-- failed/duplicate). The payload is the raw signed event for audit/retry.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS subscription_events (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  provider          TEXT    NOT NULL DEFAULT 'stripe',
+  provider_event_id TEXT    NOT NULL,
+  event_type        TEXT    NOT NULL,
+  company_id        INTEGER REFERENCES companies(id) ON DELETE SET NULL,
+  invoice_id        INTEGER REFERENCES subscription_invoices(id) ON DELETE SET NULL,
+  status            TEXT    NOT NULL DEFAULT 'received' CHECK (status IN ('received','processed','failed','duplicate')),
+  payload           TEXT,
+  processed_at      TEXT,
+  created_at        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sub_events_provider ON subscription_events(provider, provider_event_id);
+CREATE INDEX IF NOT EXISTS idx_sub_events_company ON subscription_events(company_id);
+CREATE INDEX IF NOT EXISTS idx_sub_events_type ON subscription_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_sub_events_status ON subscription_events(status);
 
 -- ---------------------------------------------------------------------------
 -- Roles: system-defined access roles. is_super_admin bypasses RBAC checks.

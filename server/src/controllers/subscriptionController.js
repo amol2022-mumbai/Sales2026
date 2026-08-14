@@ -2,7 +2,6 @@ import { getDb } from '../db/connection.js';
 import { notFound } from '../lib/httpError.js';
 import { ok, created } from '../lib/response.js';
 import { asyncHandler } from '../lib/asyncHandler.js';
-import { resolveLicense, getUserCount } from '../services/licenseService.js';
 import {
   subscriptionInvoiceNo,
   subscriptionPaymentNo,
@@ -11,6 +10,16 @@ import {
   recomputeSubscriptionInvoiceStatus,
   isSubscriptionOverdue,
 } from '../services/subscriptionService.js';
+import {
+  getCompanyBillingSummary,
+  changePlan,
+  renewSubscription,
+  cancelSubscription,
+  reactivateSubscription,
+  refundSubscription,
+  listCompanyPayments,
+  listCompanyEvents,
+} from '../services/billingService.js';
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -43,6 +52,8 @@ function subscriptionInvoiceToJson(db, row) {
     periodStart: row.period_start,
     periodEnd: row.period_end,
     dueDate: row.due_date,
+    billingCycle: row.billing_cycle,
+    provider: row.provider,
     paid: round2(subscriptionInvoicePaid(db, row.id)),
     balance,
     status: row.status,
@@ -65,6 +76,8 @@ function subscriptionPaymentToJson(row) {
     method: row.method,
     reference: row.reference,
     notes: row.notes,
+    type: row.type,
+    provider: row.provider,
     createdAt: row.created_at,
   };
 }
@@ -74,39 +87,32 @@ function subscriptionPaymentToJson(row) {
  * derived amounts from real subscription invoice/payment records.
  */
 function subscriptionToJson(db, company) {
+  const summary = getCompanyBillingSummary(db, company);
   const license = db.prepare('SELECT * FROM licenses WHERE company_id = ?').get(company.id);
   const plan = license?.plan_id ? db.prepare('SELECT * FROM plans WHERE id = ?').get(license.plan_id) || null : null;
-  const { status, expiresAt, startsAt, userLimit } = resolveLicense(db, company.id);
-  const userCount = getUserCount(db, company.id);
-
-  const billed = round2(
-    db.prepare("SELECT COALESCE(SUM(amount), 0) AS v FROM subscription_invoices WHERE company_id = ? AND status != 'Void'").get(company.id).v
-  );
-  const paid = round2(
-    db.prepare('SELECT COALESCE(SUM(amount), 0) AS v FROM subscription_payments WHERE company_id = ? AND deleted_at IS NULL').get(company.id).v
-  );
-  const outstanding = Math.max(0, round2(billed - paid));
-  const openInvoices = db
-    .prepare("SELECT COUNT(*) AS c FROM subscription_invoices WHERE company_id = ? AND status IN ('Unpaid','Partial')")
-    .get(company.id).c;
 
   return {
     companyId: company.id,
     name: company.name,
     domain: company.domain || null,
     companyStatus: company.status,
-    licenseStatus: status,
+    licenseStatus: summary.licenseStatus,
     planKey: plan?.key || null,
     planName: plan?.name || null,
     planPriceMonthly: plan?.price_monthly ?? 0,
-    startsAt: startsAt || null,
-    expiresAt: expiresAt || null,
-    userLimit,
-    userCount,
-    billed,
-    paid,
-    outstanding,
-    openInvoices,
+    planPriceAnnual: plan?.price_annual ?? 0,
+    billingCycle: summary.billingCycle,
+    autoRenew: summary.autoRenew,
+    currentPrice: summary.currentPrice,
+    startsAt: summary.startsAt,
+    expiresAt: summary.expiresAt,
+    userLimit: summary.userLimit,
+    userCount: summary.userCount,
+    billed: summary.billed,
+    paid: summary.paid,
+    outstanding: summary.outstanding,
+    openInvoices: summary.openInvoices,
+    failedPayments: summary.failedPayments,
   };
 }
 
@@ -197,4 +203,78 @@ export const recordSubscriptionPayment = asyncHandler(async (req, res) => {
 
   const row = db.prepare(`${SUB_PAYMENT_SELECT} WHERE sp.id = ?`).get(id);
   return created(res, subscriptionPaymentToJson(row));
+});
+
+// ---------------------------------------------------------------------------
+// Subscription lifecycle controls (Super Admin only).
+// ---------------------------------------------------------------------------
+function companyFor(req) {
+  const db = getDb();
+  const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(req.params.companyId);
+  if (!company) throw notFound('Client not found');
+  return company;
+}
+
+export const changePlanAction = asyncHandler(async (req, res) => {
+  const db = getDb();
+  const company = companyFor(req);
+  const result = changePlan(db, {
+    companyId: company.id,
+    planId: req.body.planId,
+    cycle: req.body.billingCycle,
+    actorUserId: req.user.id,
+    applyImmediately: req.body.applyImmediately === true,
+  });
+  req.audit?.('subscription.change_plan', { entityType: 'company', entityId: company.id, metadata: { planId: req.body.planId, cycle: req.body.billingCycle } });
+  return ok(res, { ...result, summary: subscriptionToJson(db, company) });
+});
+
+export const renewSubscriptionAction = asyncHandler(async (req, res) => {
+  const db = getDb();
+  const company = companyFor(req);
+  const result = renewSubscription(db, { companyId: company.id, cycle: req.body.billingCycle ?? null, actorUserId: req.user.id });
+  req.audit?.('subscription.renew', { entityType: 'company', entityId: company.id });
+  return ok(res, { ...result, summary: subscriptionToJson(db, company) });
+});
+
+export const cancelSubscriptionAction = asyncHandler(async (req, res) => {
+  const db = getDb();
+  const company = companyFor(req);
+  cancelSubscription(db, { companyId: company.id, actorUserId: req.user.id });
+  req.audit?.('subscription.cancel', { entityType: 'company', entityId: company.id });
+  return ok(res, subscriptionToJson(db, company));
+});
+
+export const reactivateSubscriptionAction = asyncHandler(async (req, res) => {
+  const db = getDb();
+  const company = companyFor(req);
+  reactivateSubscription(db, { companyId: company.id, actorUserId: req.user.id });
+  req.audit?.('subscription.reactivate', { entityType: 'company', entityId: company.id });
+  return ok(res, subscriptionToJson(db, company));
+});
+
+export const refundSubscriptionAction = asyncHandler(async (req, res) => {
+  const db = getDb();
+  const company = companyFor(req);
+  const result = refundSubscription(db, {
+    invoiceId: req.body.invoiceId,
+    amount: req.body.amount,
+    actorUserId: req.user.id,
+    provider: 'stripe',
+    providerId: `re_mock_${Date.now()}`,
+  });
+  req.audit?.('subscription.refund', { entityType: 'company', entityId: company.id, metadata: { invoiceId: req.body.invoiceId, amount: req.body.amount } });
+  return ok(res, { ...result, summary: subscriptionToJson(db, company) });
+});
+
+export const listSubscriptionEvents = asyncHandler(async (req, res) => {
+  const db = getDb();
+  const company = companyFor(req);
+  return ok(res, listCompanyEvents(db, company.id));
+});
+
+export const listSubscriptionPayments = asyncHandler(async (req, res) => {
+  const db = getDb();
+  const company = companyFor(req);
+  return ok(res, listCompanyPayments(db, company.id));
 });

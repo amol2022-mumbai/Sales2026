@@ -84,14 +84,15 @@ export function seedDatabase(db = getDb()) {
 
   // -- Default plans --------------------------------------------------------
   const insertPlan = db.prepare(`
-    INSERT INTO plans (key, name, description, user_limit, modules, price_monthly, sort_order, is_active, storage_limit_mb, export_enabled, api_enabled, license_duration_days, trial_days)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+    INSERT INTO plans (key, name, description, user_limit, modules, price_monthly, price_annual, sort_order, is_active, storage_limit_mb, export_enabled, api_enabled, license_duration_days, trial_days)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
     ON CONFLICT(key) DO UPDATE SET
       name = excluded.name,
       description = excluded.description,
       user_limit = excluded.user_limit,
       modules = excluded.modules,
       price_monthly = excluded.price_monthly,
+      price_annual = excluded.price_annual,
       sort_order = excluded.sort_order,
       storage_limit_mb = excluded.storage_limit_mb,
       export_enabled = excluded.export_enabled,
@@ -108,6 +109,7 @@ export function seedDatabase(db = getDb()) {
       userLimit: 5,
       modules: ['dashboard', 'leads', 'customers', 'pipeline', 'followups'],
       price: 0,
+      priceAnnual: 0,
       sort: 1,
       storageLimitMb: 1024,
       exportEnabled: false,
@@ -122,6 +124,7 @@ export function seedDatabase(db = getDb()) {
       userLimit: 20,
       modules: ['dashboard', 'leads', 'customers', 'pipeline', 'followups', 'sales', 'targets', 'reports', 'ai_assistant'],
       price: 49,
+      priceAnnual: 490,
       sort: 2,
       storageLimitMb: 10240,
       exportEnabled: true,
@@ -136,6 +139,7 @@ export function seedDatabase(db = getDb()) {
       userLimit: -1,
       modules: null,
       price: 99,
+      priceAnnual: 990,
       sort: 3,
       storageLimitMb: -1,
       exportEnabled: true,
@@ -150,6 +154,7 @@ export function seedDatabase(db = getDb()) {
       userLimit: -1,
       modules: null,
       price: 0,
+      priceAnnual: 0,
       sort: 4,
       storageLimitMb: -1,
       exportEnabled: true,
@@ -166,6 +171,7 @@ export function seedDatabase(db = getDb()) {
       plan.userLimit,
       plan.modules ? JSON.stringify(plan.modules) : null,
       plan.price,
+      plan.priceAnnual,
       plan.sort,
       plan.storageLimitMb,
       plan.exportEnabled ? 1 : 0,
