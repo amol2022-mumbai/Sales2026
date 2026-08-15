@@ -42,6 +42,8 @@ export const env = {
   appBrandColor: process.env.APP_BRAND_COLOR || '#4f46e5',
   appFaviconUrl: process.env.APP_FAVICON_URL || '',
   appLogoUrl: process.env.APP_LOGO_URL || '',
+  // Public base URL used to build absolute links (e.g. invitation emails).
+  appUrl: process.env.APP_URL || '',
   // AI Assistant (Phase 11). Provider/keys are read server-side only and are
   // never exposed to the frontend. When unset, the assistant falls back to a
   // deterministic, rule-based answer computed from real tenant data.
@@ -59,6 +61,14 @@ export const env = {
   paymentSecretKey: process.env.PAYMENT_SECRET_KEY || '',
   paymentWebhookSecret: process.env.PAYMENT_WEBHOOK_SECRET || '',
   paymentMock: process.env.PAYMENT_MOCK === '1' || process.env.PAYMENT_MOCK === 'true',
+  // Outbound email (SMTP). When SMTP_HOST/SMTP_FROM are unset, email is
+  // disabled and invitation links are delivered via the API response only.
+  smtpHost: process.env.SMTP_HOST || '',
+  smtpPort: toInt(process.env.SMTP_PORT, 587),
+  smtpSecure: process.env.SMTP_SECURE === '1' || process.env.SMTP_SECURE === 'true',
+  smtpUser: process.env.SMTP_USER || '',
+  smtpPass: process.env.SMTP_PASS || '',
+  smtpFrom: process.env.SMTP_FROM || '',
 };
 
 export function validateEnv(config = env) {

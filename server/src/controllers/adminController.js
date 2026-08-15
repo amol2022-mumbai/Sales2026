@@ -8,6 +8,7 @@ import { MODULES, CORE_MODULES } from '../config/modules.js';
 import { resolveLicense, resolveLicenseState, getUserCount, loadTenant, assertUserLimit, lifecycleFromTenant, resolveTenantLifecycle } from '../services/licenseService.js';
 import { aiStatus, testAiConnection } from '../services/aiService.js';
 import { getPlanLimitMap, applyPlanLimits, applyLicenseLimits, getEffectiveEntitlements, getUsageReport, validateFeatureLimits } from '../services/entitlementService.js';
+import { sendInviteEmail, buildInviteUrl } from '../services/mailer.js';
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -18,6 +19,19 @@ function slugify(name) {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '') || 'company'
   );
+}
+
+// Best-effort delivery of a company-admin invitation email. Never throws: the
+// accept-invite link is always returned to the caller even if email fails.
+async function notifyInvite({ to, companyName, adminName, token }) {
+  const inviteUrl = buildInviteUrl(token);
+  let emailSent = false;
+  try {
+    emailSent = (await sendInviteEmail({ to, companyName, adminName, token })).sent;
+  } catch (err) {
+    console.warn('[mailer] failed to send invitation email:', err.message);
+  }
+  return { inviteUrl, emailSent };
 }
 
 function parseJsonModules(value) {
@@ -496,13 +510,24 @@ export const onboardTenant = asyncHandler(async (req, res) => {
 
   const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(companyId);
   const license = licenseId ? db.prepare('SELECT * FROM licenses WHERE id = ?').get(licenseId) : null;
-  return created(res, {
-    company: companyToJson(company),
-    license: licenseToJson(license, companyId),
-    invitation: adminUserId
-      ? { invitationToken, userId: adminUserId, email: req.body.adminEmail, status: 'pending' }
-      : null,
-  });
+
+  let invitation = null;
+  if (adminUserId) {
+    invitation = {
+      invitationToken,
+      userId: adminUserId,
+      email: req.body.adminEmail,
+      status: 'pending',
+      ...(await notifyInvite({
+        to: req.body.adminEmail,
+        companyName: name,
+        adminName: req.body.adminName,
+        token: invitationToken,
+      })),
+    };
+  }
+
+  return created(res, { company: companyToJson(company), license: licenseToJson(license, companyId), invitation });
 });
 
 // ---------------------------------------------------------------------------
@@ -542,7 +567,14 @@ export const inviteCompanyAdmin = asyncHandler(async (req, res) => {
       metadata: { email, companyId: company.id, reset: true },
     });
 
-    return ok(res, { invitationToken, userId: existing.id, email, status: 'pending', reset: true });
+    return ok(res, {
+      invitationToken,
+      userId: existing.id,
+      email,
+      status: 'pending',
+      reset: true,
+      ...(await notifyInvite({ to: email, companyName: company.name, adminName: name, token: invitationToken })),
+    });
   }
 
   const info = db
@@ -558,7 +590,13 @@ export const inviteCompanyAdmin = asyncHandler(async (req, res) => {
     metadata: { email, companyId: company.id },
   });
 
-  return created(res, { invitationToken, userId: Number(info.lastInsertRowid), email, status: 'pending' });
+  return created(res, {
+    invitationToken,
+    userId: Number(info.lastInsertRowid),
+    email,
+    status: 'pending',
+    ...(await notifyInvite({ to: email, companyName: company.name, adminName: name, token: invitationToken })),
+  });
 });
 
 // ---------------------------------------------------------------------------

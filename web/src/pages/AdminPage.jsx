@@ -565,7 +565,15 @@ function ClientsTab() {
           {inviteResult && (
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
               <p className="font-medium">Invitation created</p>
-              <p className="mt-1 break-all text-xs">Share this link with {inviteResult.email}:</p>
+              {inviteResult.emailSent ? (
+                <p className="mt-1 text-xs">
+                  An invitation email has been sent to {inviteResult.email}. Share the link below as a backup.
+                </p>
+              ) : (
+                <p className="mt-1 text-xs">
+                  Email is not configured — share this link with {inviteResult.email}:
+                </p>
+              )}
               <code className="mt-1 block break-all rounded bg-white px-2 py-1 text-xs">{window.location.origin}/accept-invite?token={inviteResult.invitationToken}</code>
             </div>
           )}
@@ -587,7 +595,15 @@ function ClientsTab() {
             </div>
             {onboardResult.invitation && (
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-                <p className="text-slate-600">Share this link with {onboardResult.invitation.email}:</p>
+                {onboardResult.invitation.emailSent ? (
+                  <p className="text-slate-600">
+                    An invitation email has been sent to {onboardResult.invitation.email}. Share the link below as a backup.
+                  </p>
+                ) : (
+                  <p className="text-slate-600">
+                    Email is not configured — share this link with {onboardResult.invitation.email}:
+                  </p>
+                )}
                 <code className="mt-1 block break-all rounded bg-white px-2 py-1 text-xs">{window.location.origin}/accept-invite?token={onboardResult.invitation.invitationToken}</code>
               </div>
             )}

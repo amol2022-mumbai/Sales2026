@@ -40,6 +40,8 @@ committed or web-accessible.
 | `SEED_ADMIN_PASSWORD` | **yes** | One-time bootstrap password. Boot refuses to start in production if still `ChangeMe123!`. |
 | `SEED_COMPANY_NAME` | — | Name of the seed client. |
 | `APP_NAME` / `APP_BRAND_COLOR` / `APP_LOGO_URL` / `APP_FAVICON_URL` | — | Fallback white-label branding. |
+| `APP_URL` | — | Public app base URL used to build absolute links in emails (e.g. the company-admin invitation). Empty = relative `/accept-invite` links. |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | — | Outbound SMTP for invitation emails. When `SMTP_HOST`/`SMTP_FROM` are empty, email is disabled and the invitation link is returned in the API response for manual sharing. |
 | `AI_PROVIDER` / `AI_API_KEY` / `AI_MODEL` / `AI_BASE_URL` / `AI_TIMEOUT_MS` | — | Optional. Blank = deterministic offline assistant. Secrets are server-side only. |
 | `PAYMENT_PROVIDER` | — | Provider id (default `stripe`). |
 | `PAYMENT_MODE` | — | `test` or `live`. |
