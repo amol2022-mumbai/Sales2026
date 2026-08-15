@@ -136,6 +136,18 @@ export const quotationsApi = {
   remove: (id) => apiFetch(`/quotations/${id}`, { method: 'DELETE' }),
 };
 
+export const ordersApi = {
+  list: (params = {}) => {
+    const q = new URLSearchParams(params).toString();
+    return apiFetch(`/orders${q ? `?${q}` : ''}`, { raw: true });
+  },
+  get: (id) => apiFetch(`/orders/${id}`),
+  create: (payload) => apiFetch('/orders', { method: 'POST', body: payload }),
+  convert: (payload) => apiFetch('/orders/convert', { method: 'POST', body: payload }),
+  update: (id, payload) => apiFetch(`/orders/${id}`, { method: 'PUT', body: payload }),
+  remove: (id) => apiFetch(`/orders/${id}`, { method: 'DELETE' }),
+};
+
 export const notificationsApi = {
   list: (params = {}) => {
     const q = new URLSearchParams(params).toString();

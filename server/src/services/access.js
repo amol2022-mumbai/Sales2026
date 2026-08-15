@@ -583,6 +583,50 @@ export function canAccessInvoice(scope, target) {
 }
 
 /**
+ * Build a WHERE fragment + params scoping the `orders` table (aliased).
+ * Orders mirror the customer/quotation hierarchy: company / teams / self.
+ */
+export function buildOrderScopeWhere(scope, alias = 'o') {
+  switch (scope.type) {
+    case 'all':
+      return { where: '', params: [] };
+    case 'company':
+      return { where: `WHERE ${alias}.company_id = ?`, params: [scope.companyId] };
+    case 'teams':
+    case 'team': {
+      if (!scope.teamIds.length) return { where: `WHERE ${alias}.assigned_to = ?`, params: [scope.selfId] };
+      const placeholders = scope.teamIds.map(() => '?').join(', ');
+      return { where: `WHERE (${alias}.team_id IN (${placeholders}) OR ${alias}.assigned_to = ?)`, params: [...scope.teamIds, scope.selfId] };
+    }
+    case 'self':
+      return { where: `WHERE ${alias}.assigned_to = ?`, params: [scope.selfId] };
+    default:
+      return { where: 'WHERE 0', params: [] };
+  }
+}
+
+/**
+ * Record-level check: can the acting user access a given order record?
+ * @param {object} scope result of getUserDataScope
+ * @param {object} target order row (needs company_id, team_id, assigned_to)
+ */
+export function canAccessOrder(scope, target) {
+  switch (scope.type) {
+    case 'all':
+      return true;
+    case 'company':
+      return target.company_id === scope.companyId;
+    case 'teams':
+    case 'team':
+      return scope.teamIds.includes(target.team_id) || target.assigned_to === scope.selfId;
+    case 'self':
+      return target.assigned_to === scope.selfId;
+    default:
+      return false;
+  }
+}
+
+/**
  * Build a WHERE fragment + params scoping the `payments` table (aliased) via a
  * joined `invoices` table (alias `i`) so payment visibility follows the
  * invoice's company/team/owner scope.

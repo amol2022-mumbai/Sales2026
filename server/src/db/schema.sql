@@ -719,6 +719,64 @@ CREATE INDEX IF NOT EXISTS idx_quotation_items_quotation ON quotation_items(quot
 CREATE INDEX IF NOT EXISTS idx_quotation_items_product ON quotation_items(product_id);
 
 -- ---------------------------------------------------------------------------
+-- Sales Orders: fulfilled work orders raised against a customer, optionally
+-- originating from an accepted quotation. `subtotal`, `tax_amount` and `total`
+-- are denormalized totals recomputed from line items on every write (never
+-- fabricated from scratch). `status` stores Draft/Confirmed/Processing/
+-- Completed/Cancelled and follows the lifecycle Draft -> Confirmed ->
+-- Processing -> Completed (or Cancelled from any open state). Soft delete via
+-- `deleted_at`; `order_no` is the human-facing Order ID.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS orders (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_no       TEXT,
+  company_id     INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  customer_id    INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  quotation_id   INTEGER REFERENCES quotations(id) ON DELETE SET NULL,
+  status         TEXT    NOT NULL DEFAULT 'Draft' CHECK (status IN ('Draft','Confirmed','Processing','Completed','Cancelled')),
+  subtotal       REAL    NOT NULL DEFAULT 0,
+  tax_amount     REAL    NOT NULL DEFAULT 0,
+  discount       REAL    NOT NULL DEFAULT 0,
+  total          REAL    NOT NULL DEFAULT 0,
+  assigned_to    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  team_id        INTEGER REFERENCES teams(id) ON DELETE SET NULL,
+  notes          TEXT,
+  created_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  deleted_at     TEXT,
+  created_at     TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at     TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_no ON orders(order_no);
+CREATE INDEX IF NOT EXISTS idx_orders_company ON orders(company_id);
+CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id);
+CREATE INDEX IF NOT EXISTS idx_orders_quotation ON orders(quotation_id);
+CREATE INDEX IF NOT EXISTS idx_orders_assigned ON orders(assigned_to);
+CREATE INDEX IF NOT EXISTS idx_orders_team ON orders(team_id);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_deleted ON orders(deleted_at);
+
+-- ---------------------------------------------------------------------------
+-- Order items: line items belonging to a sales order. Each item may link to a
+-- product (snapshot of name/unit/price/tax taken at creation) or be a manual
+-- line. `amount` is quantity * unit_price; tax is aggregated on the order.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS order_items (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id   INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+  name       TEXT    NOT NULL,
+  unit       TEXT,
+  quantity   REAL    NOT NULL DEFAULT 1,
+  unit_price REAL    NOT NULL DEFAULT 0,
+  tax_rate   REAL    NOT NULL DEFAULT 0,
+  amount     REAL    NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
+CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items(product_id);
+
+-- ---------------------------------------------------------------------------
 -- Invoices: receivable/collection records raised against a customer. `amount`
 -- is the invoiced total; the collected amount is derived from `payments`.
 -- `status` stores Unpaid/Partial/Paid; "Overdue" is derived (unpaid balance
