@@ -237,6 +237,10 @@ npm test                              # full suite (includes security tests)
 
 ## Deployment (Hostinger / shared Node hosting)
 
+See `docs/DEPLOYMENT.md` for the full production runbook (environment
+variables, deployment/rollback, backup/restore, monitoring and the pre-flight
+checklist).
+
 A single client is deployed independently with its own database and
 environment. Steps:
 
@@ -296,8 +300,8 @@ environment. Steps:
 SQLite is a single file, so backup = a safe file copy of the running database.
 
 ```bash
-# Consistent backup (SQLite online backup API)
-sqlite3 server/data/crm.db ".backup '/backups/crm-$(date +%F).db'"
+# Consistent backup + integrity verification (VACUUM INTO + PRAGMA integrity_check)
+npm run backup
 ```
 
 - Schedule daily backups to an external location; keep at least 7 days of

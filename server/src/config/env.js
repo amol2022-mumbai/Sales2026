@@ -61,12 +61,29 @@ export const env = {
   paymentMock: process.env.PAYMENT_MOCK === '1' || process.env.PAYMENT_MOCK === 'true',
 };
 
-export function validateEnv() {
+export function validateEnv(config = env) {
   const problems = [];
-  if (!env.jwtSecret || env.jwtSecret === 'change-me-to-a-long-random-secret') {
+  if (!config.jwtSecret || config.jwtSecret === 'change-me-to-a-long-random-secret') {
     problems.push(
       'JWT_SECRET is missing or set to the placeholder value. Set a strong secret in .env (openssl rand -hex 48).'
     );
   }
+
+  // Production-only secret hygiene. These are hard failures in production
+  // (boot() refuses to start) but intentionally only warnings elsewhere so
+  // local development and tests remain frictionless.
+  if (config.isProduction) {
+    if (config.seedAdminPassword === 'ChangeMe123!') {
+      problems.push(
+        'SEED_ADMIN_PASSWORD is still the default placeholder. Set a strong unique super-admin password in production.'
+      );
+    }
+    if (config.paymentSecretKey && !config.paymentWebhookSecret) {
+      problems.push(
+        'PAYMENT_SECRET_KEY is configured but PAYMENT_WEBHOOK_SECRET is missing. Inbound payment webhooks would be rejected (fail-closed) and subscriptions could never be confirmed.'
+      );
+    }
+  }
+
   return problems;
 }
