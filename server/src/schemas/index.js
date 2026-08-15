@@ -622,6 +622,43 @@ export const searchQuerySchema = z.object({
   scope: z.enum(['all', 'users', 'companies', 'teams', 'leads', 'customers']).default('all'),
 });
 
+// ---------------------------------------------------------------------------
+// Products (product/service catalogue)
+// ---------------------------------------------------------------------------
+export const productStatuses = ['Active', 'Inactive'];
+
+export const createProductSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  sku: nullableString(100),
+  category: nullableString(100),
+  description: nullableString(2000),
+  unit: nullableString(50),
+  unitPrice: z.coerce.number().min(0).default(0),
+  taxRate: z.coerce.number().min(0).max(100).default(0),
+  status: z.enum(productStatuses).default('Active'),
+  companyId: z.coerce.number().int().positive().nullable().optional(),
+});
+
+export const updateProductSchema = z.object({
+  name: z.string().trim().min(1).max(200).optional(),
+  sku: nullableString(100),
+  category: nullableString(100),
+  description: nullableString(2000),
+  unit: nullableString(50),
+  unitPrice: z.coerce.number().min(0).optional(),
+  taxRate: z.coerce.number().min(0).max(100).optional(),
+  status: z.enum(productStatuses).optional(),
+});
+
+export const listProductsQuerySchema = paginationQuerySchema.extend({
+  search: z.string().trim().max(100).optional(),
+  category: z.string().trim().max(100).optional(),
+  status: z.enum(productStatuses).optional(),
+  companyId: z.coerce.number().int().positive().optional(),
+  sort: z.enum(['name', 'sku', 'category', 'unitPrice', 'createdAt']).optional(),
+  order: z.enum(['asc', 'desc']).optional(),
+});
+
 export const idParamSchema = z.object({
   id: z.coerce.number().int().positive(),
 });

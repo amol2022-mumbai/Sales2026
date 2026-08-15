@@ -46,7 +46,7 @@ export const NAV_SECTIONS = [
   {
     title: 'Manage',
     items: [
-      { key: 'products', label: 'Products', path: '/products', icon: Package, permission: 'products:view' },
+      { key: 'products', label: 'Products', path: '/products', icon: Package, functional: true, permission: 'products:view' },
       { key: 'sales_team', label: 'Sales Team', path: '/sales-team', icon: UserCog, functional: true, permission: 'sales_team:view' },
       { key: 'targets', label: 'Targets', path: '/targets', icon: Target, functional: true, permission: 'targets:view' },
       { key: 'territories', label: 'Territories', path: '/territories', icon: Map, permission: 'territories:view' },

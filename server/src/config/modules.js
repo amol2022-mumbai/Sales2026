@@ -21,7 +21,7 @@ export const MODULES = [
   { key: 'quotations', label: 'Quotations', description: 'Create and send quotations', functional: false, core: false },
   { key: 'orders', label: 'Orders', description: 'Sales order management', functional: false, core: false },
   { key: 'collections', label: 'Collections', description: 'Payment collections and receivables', functional: true, core: false },
-  { key: 'products', label: 'Products', description: 'Product and service catalogue', functional: false, core: false },
+  { key: 'products', label: 'Products', description: 'Product and service catalogue', functional: true, core: false },
   { key: 'territories', label: 'Territories', description: 'Sales territory management', functional: false, core: false },
   { key: 'expenses', label: 'Expenses', description: 'Expense tracking and approvals', functional: false, core: false },
   { key: 'reports', label: 'Reports', description: 'Sales and performance reports', functional: true, core: false },

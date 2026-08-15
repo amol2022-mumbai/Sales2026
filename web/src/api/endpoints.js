@@ -114,6 +114,17 @@ export const teamsApi = {
   removeMember: (id, userId) => apiFetch(`/teams/${id}/members/${userId}`, { method: 'DELETE' }),
 };
 
+export const productsApi = {
+  list: (params = {}) => {
+    const q = new URLSearchParams(params).toString();
+    return apiFetch(`/products${q ? `?${q}` : ''}`, { raw: true });
+  },
+  get: (id) => apiFetch(`/products/${id}`),
+  create: (payload) => apiFetch('/products', { method: 'POST', body: payload }),
+  update: (id, payload) => apiFetch(`/products/${id}`, { method: 'PUT', body: payload }),
+  remove: (id) => apiFetch(`/products/${id}`, { method: 'DELETE' }),
+};
+
 export const notificationsApi = {
   list: (params = {}) => {
     const q = new URLSearchParams(params).toString();

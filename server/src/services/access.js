@@ -457,6 +457,44 @@ export function canAssignTargetTo(scope, targetUser) {
 }
 
 /**
+ * Build a WHERE fragment + params scoping the `products` table (aliased).
+ * Products are company-wide master data shared across a tenant, so every
+ * non-super-admin scope collapses to the user's company.
+ */
+export function buildProductScopeWhere(scope, alias = 'p') {
+  switch (scope.type) {
+    case 'all':
+      return { where: '', params: [] };
+    case 'company':
+    case 'teams':
+    case 'team':
+    case 'self':
+      return { where: `WHERE ${alias}.company_id = ?`, params: [scope.companyId] };
+    default:
+      return { where: 'WHERE 0', params: [] };
+  }
+}
+
+/**
+ * Record-level check: can the acting user access a given product record?
+ * @param {object} scope result of getUserDataScope
+ * @param {object} target product row (needs company_id)
+ */
+export function canAccessProduct(scope, target) {
+  switch (scope.type) {
+    case 'all':
+      return true;
+    case 'company':
+    case 'teams':
+    case 'team':
+    case 'self':
+      return target.company_id === scope.companyId;
+    default:
+      return false;
+  }
+}
+
+/**
  * Build a WHERE fragment + params scoping the `invoices` table (aliased).
  * Invoices mirror the customer/lead hierarchy: company / teams / self.
  */

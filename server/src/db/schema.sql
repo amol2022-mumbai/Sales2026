@@ -632,6 +632,35 @@ CREATE INDEX IF NOT EXISTS idx_targets_dates ON targets(start_date, end_date);
 CREATE INDEX IF NOT EXISTS idx_targets_deleted ON targets(deleted_at);
 
 -- ---------------------------------------------------------------------------
+-- Products: company-wide product/service catalogue. Master data shared across
+-- a tenant so sales, quotations and orders can reference it. Soft delete via
+-- `deleted_at`; `product_no` is the human-facing Product ID.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS products (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_no   TEXT,
+  company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  name         TEXT    NOT NULL,
+  sku          TEXT,
+  category     TEXT,
+  description  TEXT,
+  unit         TEXT,
+  unit_price   REAL    NOT NULL DEFAULT 0,
+  tax_rate     REAL    NOT NULL DEFAULT 0,
+  status       TEXT    NOT NULL DEFAULT 'Active' CHECK (status IN ('Active','Inactive')),
+  created_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  deleted_at   TEXT,
+  created_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_products_no ON products(product_no);
+CREATE INDEX IF NOT EXISTS idx_products_company ON products(company_id);
+CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
+CREATE INDEX IF NOT EXISTS idx_products_status ON products(status);
+CREATE INDEX IF NOT EXISTS idx_products_deleted ON products(deleted_at);
+
+-- ---------------------------------------------------------------------------
 -- Invoices: receivable/collection records raised against a customer. `amount`
 -- is the invoiced total; the collected amount is derived from `payments`.
 -- `status` stores Unpaid/Partial/Paid; "Overdue" is derived (unpaid balance
