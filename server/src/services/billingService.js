@@ -9,7 +9,10 @@
 
 import { getDb } from '../db/connection.js';
 import { HttpError, badRequest, notFound } from '../lib/httpError.js';
-import { resolveLicense, getUserCount } from './licenseService.js';
+import { resolveLicense, getUserCount, PAST_DUE_GRACE_DAYS } from './licenseService.js';
+import { MODULES } from '../config/modules.js';
+import { FEATURE_LIMITS } from '../config/limits.js';
+import { getFeatureLimit, getPlanLimitMap } from './entitlementService.js';
 import {
   subscriptionInvoiceNo,
   subscriptionPaymentNo,
@@ -57,7 +60,18 @@ function parseModules(value) {
   }
 }
 
-function planToSummary(p) {
+/**
+ * Human-readable feature list derived from a module selection. `null` (inherit
+ * all) resolves to the full catalog so comparisons show every available module.
+ */
+function moduleFeatures(moduleKeys) {
+  const keys = moduleKeys == null ? MODULES.map((m) => m.key) : moduleKeys;
+  return MODULES.filter((m) => keys.includes(m.key)).map((m) => ({ key: m.key, label: m.label }));
+}
+
+function planToSummary(db, p) {
+  const limits = {};
+  for (const [key, value] of getPlanLimitMap(db, p.id)) limits[key] = value;
   return {
     id: p.id,
     key: p.key,
@@ -65,6 +79,8 @@ function planToSummary(p) {
     description: p.description,
     userLimit: p.user_limit,
     modules: parseModules(p.modules),
+    features: moduleFeatures(parseModules(p.modules)),
+    limits,
     priceMonthly: Number(p.price_monthly) || 0,
     priceAnnual: Number(p.price_annual) || 0,
     storageLimitMb: p.storage_limit_mb,
@@ -500,6 +516,12 @@ export function getCompanyBillingSummary(db, company) {
     )
     .get(company.id).c;
 
+  const limits = {};
+  for (const f of FEATURE_LIMITS) {
+    const { limit } = getFeatureLimit(db, company.id, f.key);
+    limits[f.key] = limit == null ? null : limit;
+  }
+
   return {
     companyId: company.id,
     name: company.name,
@@ -517,6 +539,7 @@ export function getCompanyBillingSummary(db, company) {
     startsAt: startsAt || null,
     expiresAt: expiresAt || null,
     pastDueAt: license?.past_due_at || null,
+    graceEndsAt: status === 'past_due' && license?.past_due_at ? addDays(license.past_due_at, PAST_DUE_GRACE_DAYS) : null,
     renewalDate: expiresAt || null,
     userLimit,
     userCount,
@@ -524,6 +547,8 @@ export function getCompanyBillingSummary(db, company) {
     exportEnabled: exportEnabled !== false,
     apiEnabled: apiEnabled !== false,
     modules: moduleKeys,
+    features: moduleFeatures(moduleKeys),
+    limits,
     billed,
     paid,
     outstanding,
@@ -539,7 +564,7 @@ export function listAvailablePlans(db) {
   return db
     .prepare("SELECT * FROM plans WHERE is_active = 1 ORDER BY sort_order, id")
     .all()
-    .map(planToSummary);
+    .map((p) => planToSummary(db, p));
 }
 
 function invoiceToJson(db, row, companyName = null) {

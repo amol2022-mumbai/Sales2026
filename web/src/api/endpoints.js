@@ -311,6 +311,7 @@ export const billingApi = {
   invoices: () => apiFetch('/billing/invoices'),
   payments: () => apiFetch('/billing/payments'),
   events: () => apiFetch('/billing/events'),
+  usage: () => apiFetch('/billing/usage'),
   checkout: (payload) => apiFetch('/billing/checkout', { method: 'POST', body: payload }),
   changePlan: (payload) => apiFetch('/billing/change-plan', { method: 'POST', body: payload }),
   renew: (payload = {}) => apiFetch('/billing/renew', { method: 'POST', body: payload }),

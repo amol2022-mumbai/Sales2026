@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { CreditCard, RefreshCw, Check, X } from 'lucide-react';
+import { CreditCard, RefreshCw, Check, X, AlertTriangle, Users, Database, Zap, Download } from 'lucide-react';
 import { billingApi } from '../api/endpoints.js';
 import { useAuth, can } from '../context/AuthContext.jsx';
 import Card from '../components/ui/Card.jsx';
 import Badge from '../components/ui/Badge.jsx';
 import Spinner from '../components/ui/Spinner.jsx';
 
-const STATUS_TONES = { active: 'green', trial: 'indigo', expiring: 'sky', expired: 'rose', suspended: 'amber', cancelled: 'slate' };
+const STATUS_TONES = { active: 'green', trial: 'indigo', expiring: 'sky', expired: 'rose', suspended: 'amber', cancelled: 'slate', past_due: 'amber' };
 
 function currency(value) {
   if (value == null || Number.isNaN(Number(value))) return '—';
@@ -23,6 +23,7 @@ export default function BillingPage() {
 
   const [summary, setSummary] = useState(null);
   const [plans, setPlans] = useState([]);
+  const [usage, setUsage] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -37,14 +38,16 @@ export default function BillingPage() {
     setLoading(true);
     setError(null);
     try {
-      const [s, p, i, pay] = await Promise.all([
+      const [s, p, u, i, pay] = await Promise.all([
         billingApi.get(),
         billingApi.plans(),
+        billingApi.usage(),
         billingApi.invoices(),
         billingApi.payments(),
       ]);
       setSummary(s);
       setPlans(p);
+      setUsage(u);
       setInvoices(i);
       setPayments(pay);
       setPlanId(s.planId ? String(s.planId) : '');
@@ -81,6 +84,12 @@ export default function BillingPage() {
   const reactivate = () => run((_) => billingApi.reactivate(), null);
   const payNow = (invoiceId) => run((_) => billingApi.mockPay(invoiceId), null);
 
+  function selectPlan(p) {
+    setPlanId(String(p.id));
+    setCycle(p.priceAnnual > 0 ? cycle : 'monthly');
+    document.getElementById('change-plan')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -91,6 +100,8 @@ export default function BillingPage() {
 
   const selectedPlan = plans.find((p) => String(p.id) === String(planId));
   const selectedPrice = selectedPlan ? (cycle === 'annual' ? selectedPlan.priceAnnual : selectedPlan.priceMonthly) : 0;
+  const isPastDue = summary?.licenseStatus === 'past_due';
+  const isExpired = summary?.licenseStatus === 'expired';
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -109,6 +120,30 @@ export default function BillingPage() {
 
       {summary && (
         <>
+          {isPastDue && (
+            <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>
+                <p className="font-semibold">Your subscription is past due.</p>
+                <p>
+                  A payment failed. You can keep using the service until{' '}
+                  <span className="font-semibold">{summary.graceEndsAt || summary.renewalDate || 'the grace period ends'}</span>. Update your
+                  payment method or renew to avoid interruption.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {isExpired && (
+            <div className="flex items-start gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>
+                <p className="font-semibold">Your subscription has expired.</p>
+                <p>Renew your plan to restore access to your data and features.</p>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <Card className="p-5 lg:col-span-2">
               <div className="flex items-start justify-between">
@@ -133,6 +168,11 @@ export default function BillingPage() {
                     Reactivate
                   </button>
                 )}
+                {canEdit && (isPastDue || isExpired) && (
+                  <button type="button" className="btn-primary" onClick={renew} disabled={busy}>
+                    <CreditCard className="h-4 w-4" /> Renew now
+                  </button>
+                )}
               </div>
 
               <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -152,9 +192,10 @@ export default function BillingPage() {
                   <p className="mt-1 font-semibold text-slate-900">{summary.storageLimitMb < 0 ? 'Unlimited' : `${summary.storageLimitMb} MB`}</p>
                 </div>
                 <div className="rounded-lg bg-slate-50 p-3">
-                  <p className="text-xs text-slate-500">Features</p>
-                  <p className="mt-1 text-sm text-slate-700">
-                    {summary.modules == null ? 'All modules' : `${summary.modules.length} enabled`}
+                  <p className="text-xs text-slate-500">Modules</p>
+                  <p className="mt-1 font-semibold text-slate-900">
+                    {summary.modules == null ? 'All' : summary.modules.length}
+                    <span className="font-normal text-slate-400"> enabled</span>
                   </p>
                 </div>
               </div>
@@ -167,6 +208,18 @@ export default function BillingPage() {
                     {summary.failedPayments} failed payment(s)
                   </span>
                 )}
+              </div>
+
+              <div className="mt-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Included features</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {(summary.features || []).map((f) => (
+                    <span key={f.key} className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                      {f.label}
+                    </span>
+                  ))}
+                  {(!summary.features || summary.features.length === 0) && <span className="text-xs text-slate-400">No modules configured.</span>}
+                </div>
               </div>
             </Card>
 
@@ -189,8 +242,78 @@ export default function BillingPage() {
             </Card>
           </div>
 
-          {canEdit && (
+          {usage.length > 0 && (
             <Card className="p-5">
+              <h3 className="text-sm font-semibold text-slate-800">Usage</h3>
+              <p className="mt-0.5 text-xs text-slate-400">Current usage against your plan limits.</p>
+              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {usage.map((u) => (
+                  <UsageMeter key={u.key} item={u} />
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {plans.length > 0 && (
+            <Card className="p-5">
+              <h3 className="text-sm font-semibold text-slate-800">Compare plans</h3>
+              <p className="mt-0.5 text-xs text-slate-400">Select a plan to upgrade or downgrade.</p>
+              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                {plans.map((p) => {
+                  const current = String(p.id) === String(summary.planId);
+                  return (
+                    <div
+                      key={p.id}
+                      className={`flex flex-col rounded-lg border p-4 ${current ? 'border-brand-300 bg-brand-50/50 ring-1 ring-brand-300' : 'border-slate-200'}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-semibold text-slate-900">{p.name}</h4>
+                        {current && <Badge tone="green">Current</Badge>}
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">{p.description}</p>
+                      <div className="mt-3">
+                        <span className="text-2xl font-bold text-slate-900">{currency(p.priceMonthly)}</span>
+                        <span className="text-sm text-slate-400"> / mo</span>
+                      </div>
+                      {p.priceAnnual > 0 && <p className="text-xs text-slate-500">{currency(p.priceAnnual)} / yr</p>}
+                      <ul className="mt-3 space-y-1.5 text-xs text-slate-600">
+                        <li className="flex items-center gap-2">
+                          <Users className="h-3.5 w-3.5 text-slate-400" />
+                          {p.userLimit < 0 ? 'Unlimited users' : `${p.userLimit} users`}
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <Database className="h-3.5 w-3.5 text-slate-400" />
+                          {p.storageLimitMb < 0 ? 'Unlimited storage' : `${p.storageLimitMb} MB storage`}
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <Download className="h-3.5 w-3.5 text-slate-400" />
+                          {p.exportEnabled ? 'Data export' : 'No export'}
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <Zap className="h-3.5 w-3.5 text-slate-400" />
+                          {p.apiEnabled ? 'API access' : 'No API'}
+                        </li>
+                        {Object.entries(p.limits || {}).map(([key, limit]) => (
+                          <li key={key} className="flex items-center gap-2">
+                            <Check className="h-3.5 w-3.5 text-emerald-500" />
+                            {limit == null || limit < 0 ? `Unlimited ${key.replace('_', ' ')}` : `${limit} ${key.replace('_', ' ')}`}
+                          </li>
+                        ))}
+                      </ul>
+                      {canEdit && !current && (
+                        <button type="button" className="btn-secondary mt-4 w-full" onClick={() => selectPlan(p)} disabled={busy}>
+                          Choose {p.name}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
+
+          {canEdit && (
+            <Card className="p-5" id="change-plan">
               <h3 className="text-sm font-semibold text-slate-800">Change plan</h3>
               <div className="mt-3 flex flex-wrap items-end gap-3">
                 <div>
@@ -316,5 +439,27 @@ function FeaturePill({ label, enabled }) {
       {enabled ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
       {label}
     </span>
+  );
+}
+
+function UsageMeter({ item }) {
+  const unlimited = item.limit == null;
+  const pct = item.utilizationPct == null ? 0 : Math.min(100, item.utilizationPct);
+  const tone = pct >= 100 ? 'bg-rose-500' : pct >= 80 ? 'bg-amber-500' : 'bg-emerald-500';
+  return (
+    <div className="rounded-lg bg-slate-50 p-3">
+      <div className="flex items-center justify-between text-sm">
+        <span className="font-medium text-slate-700">{item.label}</span>
+        <span className="text-xs text-slate-500">
+          {unlimited ? 'Unlimited' : `${item.usage} / ${item.limit}`}
+          {item.period === 'monthly' && <span className="text-slate-400"> · monthly</span>}
+        </span>
+      </div>
+      {!unlimited && (
+        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200">
+          <div className={`h-full rounded-full ${tone}`} style={{ width: `${pct}%` }} />
+        </div>
+      )}
+    </div>
   );
 }
