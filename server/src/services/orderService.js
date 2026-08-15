@@ -335,6 +335,10 @@ export function convertQuotationToOrder(scope, companyId, data, userId) {
     assignedTo = userId;
   }
 
+  // Copy the quotation line items verbatim, preserving the snapshot stored on
+  // the quotation. Re-resolving from the live product catalogue here would
+  // break accepted quotations whose product price changed (or whose product was
+  // since removed), so the order must honour the amounts the customer accepted.
   const items = db
     .prepare('SELECT * FROM quotation_items WHERE quotation_id = ? ORDER BY id ASC')
     .all(quotation.id)
@@ -345,9 +349,9 @@ export function convertQuotationToOrder(scope, companyId, data, userId) {
       quantity: it.quantity,
       unitPrice: it.unit_price,
       taxRate: it.tax_rate,
+      amount: it.amount,
     }));
-  const resolved = resolveItems(db, companyId, items);
-  const totals = computeTotals(resolved, quotation.discount ?? 0);
+  const totals = computeTotals(items, quotation.discount ?? 0);
 
   const info = db
     .prepare(
@@ -370,7 +374,7 @@ export function convertQuotationToOrder(scope, companyId, data, userId) {
   const orderId = Number(info.lastInsertRowid);
   db.prepare('UPDATE orders SET order_no = ? WHERE id = ?').run(orderNo(orderId), orderId);
 
-  persistItems(db, orderId, resolved);
+  persistItems(db, orderId, items);
 
   return orderToJson(db, rowById(orderId));
 }
