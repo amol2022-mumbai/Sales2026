@@ -7,7 +7,7 @@
 // ============================================================================
 
 import { computeActual } from './targetService.js';
-import { invoiceBalance, isOverdue } from './collectionService.js';
+import { invoicePaidByInvoiceIds } from './collectionService.js';
 
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -654,8 +654,9 @@ function agingReport(db, ctx) {
     { bucket: '90+ days', amount: 0 },
   ];
   const today = new Date().toISOString().slice(0, 10);
+  const paidById = invoicePaidByInvoiceIds(db, invoices.map((i) => i.id));
   for (const inv of invoices) {
-    const balance = invoiceBalance(db, inv);
+    const balance = Math.round((inv.amount - (paidById.get(inv.id) ?? 0)) * 100) / 100;
     if (balance <= 0) continue;
     const key = !inv.due_date || inv.due_date >= today
       ? 'Not due'

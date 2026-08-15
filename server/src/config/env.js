@@ -23,6 +23,7 @@ export const env = {
   isProduction: process.env.NODE_ENV === 'production',
   isTest: process.env.NODE_ENV === 'test',
   port: toInt(process.env.PORT, 4000),
+  trustProxy: toInt(process.env.TRUST_PROXY, 1),
   apiBaseUrl: process.env.API_BASE_URL || `http://localhost:${toInt(process.env.PORT, 4000)}`,
   corsOrigins: splitList(process.env.CORS_ORIGINS),
   dbPath:

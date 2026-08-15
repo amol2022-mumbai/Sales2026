@@ -3,17 +3,24 @@ import helmet from 'helmet';
 import cors from 'cors';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
+import compression from 'compression';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { env } from './config/env.js';
 import apiRoutes from './routes/index.js';
 import billingWebhookRoutes from './routes/billingWebhook.routes.js';
 import { auditMiddleware } from './services/auditService.js';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const webDist = path.resolve(__dirname, '../../web/dist');
+
 export function createApp() {
   const app = express();
 
   app.disable('x-powered-by');
-  app.set('trust proxy', 1);
+  app.set('trust proxy', env.trustProxy);
 
   app.use(
     helmet({
@@ -33,6 +40,8 @@ export function createApp() {
       },
     })
   );
+
+  app.use(compression());
 
   app.use(
     cors({
@@ -116,6 +125,16 @@ export function createApp() {
   app.use('/api', apiLimiter);
 
   app.use('/api', apiRoutes);
+
+  // Serve the production frontend build when present (single-port deployment).
+  // API and webhook routes are mounted above, so the SPA fallback never
+  // intercepts them.
+  if (env.isProduction && fs.existsSync(path.join(webDist, 'index.html'))) {
+    app.use(express.static(webDist));
+    app.get(/^\/(?!api\/).*/, (_req, res) => {
+      res.sendFile(path.join(webDist, 'index.html'));
+    });
+  }
 
   app.use(notFoundHandler);
   app.use(errorHandler);

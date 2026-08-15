@@ -3,7 +3,7 @@ import { notFound, forbidden, badRequest, conflict } from '../lib/httpError.js';
 import { ok, created, paginated } from '../lib/response.js';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { getUserDataScope, buildInvoiceScopeWhere, buildPaymentScopeWhere, canAccessInvoice } from '../services/access.js';
-import { invoiceNo, paymentNo, invoicePaid, invoiceBalance, deriveInvoiceStatus, recomputeInvoiceStatus, isOverdue } from '../services/collectionService.js';
+import { invoiceNo, paymentNo, invoicePaid, invoicePaidByInvoiceIds, deriveInvoiceStatus, recomputeInvoiceStatus, isOverdue } from '../services/collectionService.js';
 
 const INVOICE_SELECT = `
   SELECT i.*, c.name AS customer_name, c.customer_no AS customer_no,
@@ -23,8 +23,9 @@ const PAYMENT_SELECT = `
   LEFT JOIN users u ON u.id = p.received_by
 `;
 
-function invoiceToJson(db, row) {
-  const balance = invoiceBalance(db, row);
+function invoiceToJson(db, row, paidOverride) {
+  const paid = paidOverride !== undefined ? paidOverride : invoicePaid(db, row.id);
+  const balance = Math.round((row.amount - paid) * 100) / 100;
   return {
     id: row.id,
     invoiceNo: row.invoice_no,
@@ -32,7 +33,7 @@ function invoiceToJson(db, row) {
     customerName: row.customer_name,
     customerNo: row.customer_no,
     amount: row.amount,
-    paid: Math.round((row.amount - balance) * 100) / 100,
+    paid: Math.round(paid * 100) / 100,
     balance,
     dueDate: row.due_date,
     status: row.status,
@@ -141,7 +142,8 @@ export const listInvoices = asyncHandler(async (req, res) => {
     .prepare(`${INVOICE_SELECT} ${whereSql} ORDER BY ${sortCol} ${dir} LIMIT ? OFFSET ?`)
     .all(...allParams, pageSize, (page - 1) * pageSize);
 
-  const items = rows.map((r) => invoiceToJson(db, r));
+  const paidById = invoicePaidByInvoiceIds(db, rows.map((r) => r.id));
+  const items = rows.map((r) => invoiceToJson(db, r, paidById.get(r.id) ?? 0));
 
   return paginated(res, items, { page, pageSize, total });
 });

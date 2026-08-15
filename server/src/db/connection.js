@@ -17,6 +17,9 @@ export function openDatabase(dbPath) {
   database.exec('PRAGMA journal_mode = WAL;');
   database.exec('PRAGMA foreign_keys = ON;');
   database.exec('PRAGMA busy_timeout = 5000;');
+  database.exec('PRAGMA synchronous = NORMAL;');
+  database.exec('PRAGMA cache_size = -64000;');
+  database.exec('PRAGMA temp_store = MEMORY;');
   return database;
 }
 

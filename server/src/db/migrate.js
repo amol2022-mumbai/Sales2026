@@ -130,6 +130,13 @@ export function applyIncrementalMigrations(db) {
  */
 export function migrate(db = getDb()) {
   const schema = fs.readFileSync(schemaPath, 'utf8');
-  db.exec(schema);
-  applyIncrementalMigrations(db);
+  db.exec('BEGIN');
+  try {
+    db.exec(schema);
+    applyIncrementalMigrations(db);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
 }
