@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, useLocation, Navigate } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams, Navigate } from 'react-router-dom';
 import { ShieldCheck, TrendingUp, Users, Target } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useBranding } from '../context/BrandContext.jsx';
@@ -18,12 +18,19 @@ export default function LoginPage() {
   const { branding } = useBranding();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  if (!loading && user) return <Navigate to="/" replace />;
+  // `relogin=1` (used by the Super Admin "Generate Temporary Credentials" login
+  // URL) forces the sign-in form to render even when a session already exists,
+  // so a Company Admin can sign in fresh without being bounced to the current
+  // user's dashboard.
+  const forceLogin = searchParams.get('relogin') != null;
+
+  if (!forceLogin && !loading && user) return <Navigate to="/" replace />;
 
   async function handleSubmit(e) {
     e.preventDefault();

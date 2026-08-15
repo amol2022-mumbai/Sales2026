@@ -34,6 +34,7 @@ test('Super Admin can generate one-time temporary credentials for a Company Admi
   assert.equal(data.username, 'admin.one@tempco.com');
   assert.ok(data.tempPassword.length >= 16);
   assert.ok(data.loginUrl);
+  assert.ok(data.loginUrl.includes('relogin=1'));
   assert.ok(data.expiresAt);
 
   const user = db.prepare('SELECT * FROM users WHERE email = ?').get('admin.one@tempco.com');

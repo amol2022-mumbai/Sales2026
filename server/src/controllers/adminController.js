@@ -655,7 +655,12 @@ export const generateAdminCredentials = asyncHandler(async (req, res) => {
     metadata: { email, companyId: company.id, expiresAt, reset: Boolean(existing) },
   });
 
-  const loginUrl = env.appUrl ? `${env.appUrl.replace(/\/+$/, '')}/login` : '/login';
+  // `relogin=1` forces the login screen to render even when a browser already
+  // holds an authenticated session (e.g. the Super Admin previewing the link),
+  // so the Company Admin can always sign in fresh with these credentials.
+  const loginUrl = env.appUrl
+    ? `${env.appUrl.replace(/\/+$/, '')}/login?relogin=1`
+    : '/login?relogin=1';
 
   return ok(res, {
     company: company.name,
