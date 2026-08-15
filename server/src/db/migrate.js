@@ -19,13 +19,15 @@ export function ensureColumn(db, table, column, ddl) {
 
 /**
  * Rebuild the `licenses` table when it was created before the `cancelled`
- * lifecycle state (and the per-license entitlement overrides) were introduced.
- * SQLite cannot alter a CHECK constraint, so the table is recreated and data
- * copied over. Nothing references `licenses`, so this is safe.
+ * lifecycle state and the `past_due` state (and the per-license entitlement
+ * overrides) were introduced. SQLite cannot alter a CHECK constraint, so the
+ * table is recreated and data copied over. Nothing references `licenses`, so
+ * this is safe.
  */
 export function migrateLicensesSchema(db) {
   const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'licenses'").get();
-  if (!row || !row.sql || row.sql.includes("'cancelled'")) return;
+  if (!row || !row.sql) return;
+  if (row.sql.includes("'cancelled'") && row.sql.includes("'past_due'")) return;
 
   db.exec('ALTER TABLE licenses RENAME TO licenses_old');
   db.exec(`
@@ -33,9 +35,10 @@ export function migrateLicensesSchema(db) {
       id               INTEGER PRIMARY KEY AUTOINCREMENT,
       company_id       INTEGER NOT NULL UNIQUE REFERENCES companies(id) ON DELETE CASCADE,
       plan_id          INTEGER REFERENCES plans(id) ON DELETE SET NULL,
-      status           TEXT    NOT NULL DEFAULT 'active' CHECK (status IN ('active','expired','suspended','trial','cancelled')),
+      status           TEXT    NOT NULL DEFAULT 'active' CHECK (status IN ('active','expired','suspended','trial','cancelled','past_due')),
       starts_at        TEXT,
       expires_at       TEXT,
+      past_due_at      TEXT,
       user_limit       INTEGER,
       modules          TEXT,
       storage_limit_mb INTEGER,
@@ -97,6 +100,7 @@ export function applyIncrementalMigrations(db) {
   ensureColumn(db, 'licenses', 'storage_limit_mb', 'INTEGER');
   ensureColumn(db, 'licenses', 'export_enabled', 'INTEGER');
   ensureColumn(db, 'licenses', 'api_enabled', 'INTEGER');
+  ensureColumn(db, 'licenses', 'past_due_at', 'TEXT');
 
   // Online payments & billing (Phase 14): billing cycle / auto-renew settings
   // and provider identifiers on subscription billing records.

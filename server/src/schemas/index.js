@@ -711,7 +711,7 @@ export const updatePlanSchema = z.object({
   trialDays: z.number().int().min(0).optional(),
 });
 
-export const licenseStatuses = ['active', 'trial', 'expired', 'suspended', 'cancelled'];
+export const licenseStatuses = ['active', 'trial', 'past_due', 'expired', 'suspended', 'cancelled'];
 
 export const upsertLicenseSchema = z.object({
   planId: z.number().int().positive().nullable().optional(),
@@ -731,7 +731,7 @@ export const listClientsQuerySchema = paginationQuerySchema.extend({
   search: z.string().trim().max(100).optional(),
   status: z.enum(['active', 'inactive', 'suspended']).optional(),
   lifecycle: z
-    .enum(['pending', 'trial', 'active', 'expiring', 'expired', 'suspended', 'cancelled', 'deactivated'])
+    .enum(['pending', 'trial', 'active', 'expiring', 'past_due', 'expired', 'suspended', 'cancelled', 'deactivated'])
     .optional(),
   licenseStatus: z.enum(licenseStatuses).optional(),
   planId: z.coerce.number().int().positive().optional(),

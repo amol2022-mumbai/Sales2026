@@ -733,6 +733,11 @@ export const upsertLicense = asyncHandler(async (req, res) => {
     if (req.body.status !== undefined) {
       sets.push('status = ?');
       values.push(req.body.status);
+      if (req.body.status === 'past_due') {
+        sets.push("past_due_at = COALESCE(past_due_at, strftime('%Y-%m-%d','now'))");
+      } else {
+        sets.push('past_due_at = NULL');
+      }
     }
     if (req.body.startsAt !== undefined) {
       sets.push('starts_at = ?');
@@ -775,14 +780,15 @@ export const upsertLicense = asyncHandler(async (req, res) => {
     db.prepare(`UPDATE licenses SET ${sets.join(', ')} WHERE id = ?`).run(...values);
   } else {
     db.prepare(
-      `INSERT INTO licenses (company_id, plan_id, status, starts_at, expires_at, user_limit, modules, storage_limit_mb, export_enabled, api_enabled, billing_cycle, auto_renew, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO licenses (company_id, plan_id, status, starts_at, expires_at, past_due_at, user_limit, modules, storage_limit_mb, export_enabled, api_enabled, billing_cycle, auto_renew, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       companyId,
       req.body.planId ?? null,
       req.body.status,
       startsAt ?? null,
       expiresAt,
+      req.body.status === 'past_due' ? new Date().toISOString().slice(0, 10) : null,
       req.body.userLimit ?? null,
       modulesJson ?? null,
       req.body.storageLimitMb ?? null,
@@ -986,6 +992,7 @@ export const platformDashboard = asyncHandler(async (req, res) => {
       license: {
         active: licenseByStatus.active || 0,
         trial: licenseByStatus.trial || 0,
+        pastDue: licenseByStatus.past_due || 0,
         expired: licenseByStatus.expired || 0,
         suspended: licenseByStatus.suspended || 0,
         cancelled: licenseByStatus.cancelled || 0,

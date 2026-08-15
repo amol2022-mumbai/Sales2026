@@ -12,8 +12,9 @@ import { HttpError } from '../lib/httpError.js';
 
 // Stored (persisted) license lifecycle states. `expiring` is a derived state
 // reported alongside the stored one when an active/trial license is close to
-// its expiry date.
-export const LICENSE_STATUSES = ['active', 'trial', 'expired', 'suspended', 'cancelled'];
+// its expiry date. `past_due` is entered when a subscription payment fails and
+// carries a grace period before it is resolved as `suspended`.
+export const LICENSE_STATUSES = ['active', 'trial', 'past_due', 'expired', 'suspended', 'cancelled'];
 
 // The full tenant lifecycle as observed across the platform. `pending` (no
 // license provisioned yet) and `deactivated` (company status `inactive`) are
@@ -23,6 +24,7 @@ export const TENANT_LIFECYCLE_STATUSES = [
   'trial',
   'active',
   'expiring',
+  'past_due',
   'expired',
   'suspended',
   'cancelled',
@@ -33,13 +35,19 @@ export const TENANT_LIFECYCLE_STATUSES = [
 // `expiring`.
 export const EXPIRING_SOON_DAYS = 30;
 
+// Number of days a license may remain `past_due` before it is resolved as
+// `suspended` (grace period). During this window access is still permitted so
+// a transient payment failure does not immediately lock a tenant out.
+export const PAST_DUE_GRACE_DAYS = 14;
+
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
 function addDays(dateStr, days) {
   if (!dateStr) return null;
-  const d = new Date(`${dateStr}T00:00:00Z`);
+  // Accept both date-only (YYYY-MM-DD) and full ISO timestamps.
+  const d = new Date(`${dateStr.slice(0, 10)}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
@@ -81,6 +89,7 @@ export function resolveLicenseState(license, plan, ref = today()) {
       status: 'active',
       expiresAt: null,
       startsAt: null,
+      pastDueAt: null,
       userLimit: -1,
       moduleKeys: null,
       storageLimitMb: -1,
@@ -106,6 +115,15 @@ export function resolveLicenseState(license, plan, ref = today()) {
     }
   }
 
+  // Past-due grace period: a license that stays `past_due` beyond its grace
+  // window is resolved as `suspended` (access blocked).
+  if (status === 'past_due' && license.past_due_at) {
+    const deadline = addDays(license.past_due_at, PAST_DUE_GRACE_DAYS);
+    if (deadline && deadline < ref) {
+      status = 'suspended';
+    }
+  }
+
   const userLimit = license.user_limit != null ? license.user_limit : plan?.user_limit != null ? plan.user_limit : -1;
   const moduleKeys = license.modules != null ? parseModules(license.modules) : plan?.modules != null ? parseModules(plan.modules) : null;
 
@@ -124,6 +142,7 @@ export function resolveLicenseState(license, plan, ref = today()) {
     status,
     expiresAt: license.expires_at,
     startsAt: license.starts_at,
+    pastDueAt: license.past_due_at ?? null,
     userLimit,
     moduleKeys: moduleKeys ? moduleKeys.filter(isValidModuleKey) : null,
     storageLimitMb,
@@ -149,6 +168,16 @@ export function resolveLicense(db, companyId) {
   if ((license.status === 'active' || license.status === 'trial') && license.expires_at && license.expires_at < today()) {
     license.status = 'expired';
     db.prepare("UPDATE licenses SET status = 'expired', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?").run(license.id);
+  }
+
+  // Persist the past-due grace transition (past_due -> suspended) for stored
+  // consistency, mirroring the expiry handling above.
+  if (license.status === 'past_due' && license.past_due_at) {
+    const deadline = addDays(license.past_due_at, PAST_DUE_GRACE_DAYS);
+    if (deadline && deadline < today()) {
+      license.status = 'suspended';
+      db.prepare("UPDATE licenses SET status = 'suspended', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?").run(license.id);
+    }
   }
 
   return resolveLicenseState(license, plan);
@@ -300,7 +329,7 @@ export function assertUserLimit(tenant, companyId) {
  */
 export function buildTenantPayload(tenant) {
   if (!tenant) return null;
-  const { company, plan, status, expiresAt, startsAt, userLimit, moduleKeys, storageLimitMb, exportEnabled, apiEnabled } = tenant;
+  const { company, plan, status, expiresAt, startsAt, pastDueAt, userLimit, moduleKeys, storageLimitMb, exportEnabled, apiEnabled } = tenant;
   return {
     companyId: company.id,
     name: company.name,
@@ -328,6 +357,7 @@ export function buildTenantPayload(tenant) {
       planName: plan?.name || null,
       startsAt: startsAt || null,
       expiresAt: expiresAt || null,
+      pastDueAt: pastDueAt || null,
       userLimit,
       modules: moduleKeys ? [...moduleKeys, ...CORE_MODULES].sort() : null,
       storageLimitMb,

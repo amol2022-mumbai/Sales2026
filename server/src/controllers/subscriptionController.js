@@ -16,6 +16,7 @@ import {
   renewSubscription,
   cancelSubscription,
   reactivateSubscription,
+  suspendSubscription,
   refundSubscription,
   listCompanyPayments,
   listCompanyEvents,
@@ -106,6 +107,7 @@ function subscriptionToJson(db, company) {
     currentPrice: summary.currentPrice,
     startsAt: summary.startsAt,
     expiresAt: summary.expiresAt,
+    pastDueAt: summary.pastDueAt || null,
     userLimit: summary.userLimit,
     userCount: summary.userCount,
     billed: summary.billed,
@@ -250,6 +252,14 @@ export const reactivateSubscriptionAction = asyncHandler(async (req, res) => {
   const company = companyFor(req);
   reactivateSubscription(db, { companyId: company.id, actorUserId: req.user.id });
   req.audit?.('subscription.reactivate', { entityType: 'company', entityId: company.id });
+  return ok(res, subscriptionToJson(db, company));
+});
+
+export const suspendSubscriptionAction = asyncHandler(async (req, res) => {
+  const db = getDb();
+  const company = companyFor(req);
+  suspendSubscription(db, { companyId: company.id, actorUserId: req.user.id });
+  req.audit?.('subscription.suspend', { entityType: 'company', entityId: company.id });
   return ok(res, subscriptionToJson(db, company));
 });
 

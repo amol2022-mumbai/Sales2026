@@ -49,6 +49,7 @@ import {
   renewSubscriptionAction,
   cancelSubscriptionAction,
   reactivateSubscriptionAction,
+  suspendSubscriptionAction,
   refundSubscriptionAction,
   listSubscriptionEvents,
   listSubscriptionPayments,
@@ -102,6 +103,7 @@ router.post('/subscriptions/:companyId/change-plan', validate(companyIdParamSche
 router.post('/subscriptions/:companyId/renew', validate(companyIdParamSchema, 'params'), validate(renewSubscriptionSchema), renewSubscriptionAction);
 router.post('/subscriptions/:companyId/cancel', validate(companyIdParamSchema, 'params'), cancelSubscriptionAction);
 router.post('/subscriptions/:companyId/reactivate', validate(companyIdParamSchema, 'params'), reactivateSubscriptionAction);
+router.post('/subscriptions/:companyId/suspend', validate(companyIdParamSchema, 'params'), suspendSubscriptionAction);
 router.post('/subscriptions/:companyId/refund', validate(companyIdParamSchema, 'params'), validate(refundSubscriptionSchema), refundSubscriptionAction);
 router.get('/subscriptions/:companyId/events', validate(companyIdParamSchema, 'params'), listSubscriptionEvents);
 router.get('/subscriptions/:companyId/payments', validate(companyIdParamSchema, 'params'), listSubscriptionPayments);

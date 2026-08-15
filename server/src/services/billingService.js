@@ -111,7 +111,7 @@ function extendLicense(db, companyId, { planId, cycle, autoRenew = 1 }) {
 
   db.prepare(
     `UPDATE licenses
-     SET plan_id = COALESCE(?, plan_id), status = 'active', billing_cycle = ?, auto_renew = ?,
+     SET plan_id = COALESCE(?, plan_id), status = 'active', past_due_at = NULL, billing_cycle = ?, auto_renew = ?,
          starts_at = COALESCE(starts_at, ?), expires_at = ?,
          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
      WHERE id = ?`
@@ -221,7 +221,7 @@ export function changePlan(db, { companyId, planId, cycle = 'monthly', actorUser
   if (applyImmediately || price === 0) {
     ensureLicense(db, companyId, planId);
     db.prepare(
-      `UPDATE licenses SET plan_id = ?, status = 'active', billing_cycle = ?, auto_renew = 1,
+      `UPDATE licenses SET plan_id = ?, status = 'active', past_due_at = NULL, billing_cycle = ?, auto_renew = 1,
          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE company_id = ?`
     ).run(planId, cycle, companyId);
     return { appliedImmediately: true, invoice: null, price };
@@ -298,7 +298,7 @@ export function reactivateSubscription(db, { companyId, actorUserId }) {
   }
 
   db.prepare(
-    `UPDATE licenses SET status = 'active', auto_renew = 1, expires_at = ?, billing_cycle = ?,
+    `UPDATE licenses SET status = 'active', past_due_at = NULL, auto_renew = 1, expires_at = ?, billing_cycle = ?,
        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`
   ).run(expiresAt, cycle, license.id);
   return getLicense(db, companyId);
@@ -309,6 +309,49 @@ export function reactivateSubscription(db, { companyId, actorUserId }) {
  */
 export function refundSubscription(db, { invoiceId, amount, actorUserId, provider = null, providerId = null }) {
   return applyRefund(db, { invoiceId, providerId, provider, amount, method: 'Refund' });
+}
+
+/**
+ * Move a subscription into `past_due` after a failed payment. The company is
+ * resolved authoritatively from the invoice (or the supplied companyId). Only
+ * active/trial/past_due licenses are downgraded; suspended/cancelled/expired
+ * licenses are left untouched. Records when the account entered `past_due` so
+ * the grace period can be evaluated.
+ */
+export function markSubscriptionPastDue(db, { invoiceId = null, companyId = null }) {
+  let targetCompanyId = companyId;
+  if (invoiceId != null) {
+    const invoice = db.prepare('SELECT company_id FROM subscription_invoices WHERE id = ?').get(invoiceId);
+    if (invoice) targetCompanyId = invoice.company_id;
+  }
+  if (!targetCompanyId) return null;
+
+  const now = today();
+  const license = getLicense(db, targetCompanyId);
+  if (!license) return null;
+  if (!['active', 'trial', 'past_due'].includes(license.status)) return license;
+
+  db.prepare(
+    `UPDATE licenses SET status = 'past_due', past_due_at = ?,
+       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`
+  ).run(now, license.id);
+  return getLicense(db, targetCompanyId);
+}
+
+/**
+ * Suspend a subscription at the license level (immediate). Blocks tenant access
+ * until reactivated. Used by the Super Admin as an explicit `past_due ->
+ * suspended` (or abuse) control.
+ */
+export function suspendSubscription(db, { companyId, actorUserId }) {
+  const company = db.prepare('SELECT id FROM companies WHERE id = ?').get(companyId);
+  if (!company) throw notFound('Client not found');
+  const license = ensureLicense(db, companyId, null);
+  db.prepare(
+    `UPDATE licenses SET status = 'suspended',
+       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`
+  ).run(license.id);
+  return getLicense(db, companyId);
 }
 
 // ---------------------------------------------------------------------------
@@ -386,6 +429,10 @@ export function processWebhookEvent(db, event) {
         break;
       case 'invoice.payment_failed':
       case 'payment_intent.payment_failed':
+        markSubscriptionPastDue(db, {
+          invoiceId: invoiceId ? Number(invoiceId) : null,
+          companyId: companyId ? Number(companyId) : null,
+        });
         result = { applied: true, eventType, failed: true };
         break;
       case 'charge.refunded':
@@ -469,6 +516,7 @@ export function getCompanyBillingSummary(db, company) {
     currentPrice: plan ? planPrice(plan, cycle) : 0,
     startsAt: startsAt || null,
     expiresAt: expiresAt || null,
+    pastDueAt: license?.past_due_at || null,
     renewalDate: expiresAt || null,
     userLimit,
     userCount,

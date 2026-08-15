@@ -85,8 +85,8 @@ export const operationsOverview = asyncHandler(async (req, res) => {
   const db = getDb();
   const { companies, byCompany } = loadTenantStates(db);
 
-  const tenants = { total: companies.length, active: 0, trial: 0, suspended: 0, expiring: 0, expired: 0, cancelled: 0, deactivated: 0, pending: 0 };
-  const licenses = { total: 0, active: 0, trial: 0, expired: 0, suspended: 0, cancelled: 0, expiringSoon: 0 };
+  const tenants = { total: companies.length, active: 0, trial: 0, pastDue: 0, suspended: 0, expiring: 0, expired: 0, cancelled: 0, deactivated: 0, pending: 0 };
+  const licenses = { total: 0, active: 0, trial: 0, pastDue: 0, expired: 0, suspended: 0, cancelled: 0, expiringSoon: 0 };
   let mrr = 0;
   let monthlyPlans = 0;
   let annualPlans = 0;
@@ -98,6 +98,7 @@ export const operationsOverview = asyncHandler(async (req, res) => {
       const stored = license.status;
       if (stored === 'active') licenses.active += 1;
       else if (stored === 'trial') licenses.trial += 1;
+      else if (stored === 'past_due') licenses.pastDue += 1;
       else if (stored === 'expired') licenses.expired += 1;
       else if (stored === 'suspended') licenses.suspended += 1;
       else if (stored === 'cancelled') licenses.cancelled += 1;
@@ -473,6 +474,20 @@ export const listAlerts = asyncHandler(async (req, res) => {
         companyId,
         companyName,
         data: { companyStatus: company.status, licenseStatus: resolved.status },
+      });
+    }
+
+    // Past-due tenants (grace period after a failed payment).
+    if (lifecycle === 'past_due') {
+      alerts.push({
+        id: `tenant_past_due:${companyId}`,
+        type: 'tenant_past_due',
+        severity: 'warning',
+        title: `Payment past due — ${companyName}`,
+        message: `${companyName} has an overdue subscription payment and is in its grace period.`,
+        companyId,
+        companyName,
+        data: { licenseStatus: resolved.status, pastDueAt: resolved.pastDueAt },
       });
     }
   }
