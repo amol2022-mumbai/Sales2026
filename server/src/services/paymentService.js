@@ -16,20 +16,25 @@ export function paymentProvider() {
 }
 
 /**
- * True when checkout should run in mock mode: either explicitly enabled, or no
- * real provider secret is configured (so the flow stays usable offline).
+ * True when checkout should run in mock mode: only when no real provider
+ * secret is configured (so the flow stays usable offline). A real secret
+ * always wins, so a stray `PAYMENT_MOCK=1` can never reopen the mock payment
+ * path in a production deployment that has a live provider.
  */
 export function isMockMode() {
-  return env.paymentMock || !env.paymentSecretKey;
+  return !env.paymentSecretKey;
 }
 
 /**
- * Whether a webhook secret is available for signature verification. In mock
- * mode with no secret, a deterministic test secret is used so verification can
- * still be exercised locally without leaking any real credential.
+ * The webhook verification secret. Fails closed: when a live provider is
+ * configured (i.e. not mock mode) but no webhook secret is set, verification
+ * must reject every inbound event rather than fall back to a well-known
+ * constant that an attacker could sign with.
  */
 export function webhookSecret() {
-  return env.paymentWebhookSecret || 'mock-webhook-secret';
+  if (env.paymentWebhookSecret) return env.paymentWebhookSecret;
+  if (isMockMode()) return 'mock-webhook-secret';
+  return null;
 }
 
 /**
@@ -44,7 +49,7 @@ export function signWebhookBody(rawBody, secret = webhookSecret()) {
  * Timing-safe verification of a webhook signature against the raw body.
  */
 export function verifyWebhookSignature(rawBody, signature, secret = webhookSecret()) {
-  if (!signature || typeof signature !== 'string') return false;
+  if (!secret || !signature || typeof signature !== 'string') return false;
   const expected = signWebhookBody(rawBody, secret);
   const sigBuf = Buffer.from(signature.trim(), 'utf8');
   const expBuf = Buffer.from(expected, 'utf8');
@@ -71,17 +76,23 @@ function extractV1(header) {
   return v1.trim().slice(3);
 }
 
+// Maximum allowed age of a signed webhook before it is treated as a replay.
+const WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = 300;
+
 /**
- * Verify a Stripe-style `t=,v1=` signature header. Accepts a simple hex digest
- * as a fallback (used by the mock provider).
+ * Verify a Stripe-style `t=,v1=` signature header. The embedded timestamp must
+ * be within a small tolerance window so a captured request cannot be replayed
+ * later. Accepts a simple hex digest as a fallback (used by the mock provider).
  */
 export function verifyWebhookHeader(rawBody, header, secret = webhookSecret()) {
-  if (!header || typeof header !== 'string') return false;
+  if (!secret || !header || typeof header !== 'string') return false;
   if (header.includes('v1=')) {
     const tMatch = header.match(/(?:^|,)\s*t=(\d+)/);
     const t = tMatch ? tMatch[1] : null;
     const v1 = extractV1(header);
-    if (!v1) return false;
+    if (!t || !v1) return false;
+    const now = Math.floor(Date.now() / 1000);
+    if (Math.abs(now - Number(t)) > WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS) return false;
     const expected = crypto.createHmac('sha256', secret).update(`${t}.${rawBody}`, 'utf8').digest('hex');
     const a = Buffer.from(v1, 'utf8');
     const b = Buffer.from(expected, 'utf8');

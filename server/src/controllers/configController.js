@@ -3,10 +3,30 @@ import { ok } from '../lib/response.js';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { env } from '../config/env.js';
 import { buildTenantPayload, resolveLicense } from '../services/licenseService.js';
+import { verifyToken } from '../lib/jwt.js';
+import { getUserContext } from '../services/userService.js';
+
+/**
+ * Returns true only when the request carries a valid Bearer token for a Super
+ * Admin. Used to gate the `?companyId=` preview param so that anonymous
+ * visitors cannot enumerate arbitrary tenants' branding/license details.
+ */
+function isSuperAdminRequest(req) {
+  try {
+    const header = req.get('authorization') || '';
+    const [scheme, token] = header.split(' ');
+    if (scheme !== 'Bearer' || !token) return false;
+    const payload = verifyToken(token);
+    const user = getUserContext(payload.sub);
+    return Boolean(user?.isSuperAdmin);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Public white-label configuration endpoint (no auth). Resolves the tenant by:
- *   1. an explicit `?companyId=` query param (super admin preview),
+ *   1. an explicit `?companyId=` query param (super admin preview only),
  *   2. matching the request `Host` header against `companies.domain`,
  *   3. the first active company (single-client deployments),
  *   4. platform-level env defaults when no company exists.
@@ -18,7 +38,7 @@ export const publicConfig = asyncHandler(async (req, res) => {
 
   let company = null;
 
-  if (req.query.companyId) {
+  if (req.query.companyId && isSuperAdminRequest(req)) {
     company = db.prepare('SELECT * FROM companies WHERE id = ?').get(Number(req.query.companyId)) || null;
   }
 

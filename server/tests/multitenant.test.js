@@ -78,8 +78,8 @@ test('super admin can manage clients, plans and licenses', async () => {
   assert.equal(licList.status, 200);
   assert.ok(licList.body.data.some((l) => l.companyId === clientId));
 
-  // Public config reflects the new client branding by companyId
-  const cfg = await request.get(`/api/config?companyId=${clientId}`);
+  // Public config reflects the new client branding by companyId (super admin preview).
+  const cfg = await request.get(`/api/config?companyId=${clientId}`).set(h);
   assert.equal(cfg.body.data.company.brandColor, '#abcdef');
 });
 
