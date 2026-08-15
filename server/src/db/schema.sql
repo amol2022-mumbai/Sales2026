@@ -319,6 +319,8 @@ CREATE TABLE IF NOT EXISTS users (
   last_login_at TEXT,
   invitation_token TEXT,
   invitation_expires_at TEXT,
+  must_change_password INTEGER NOT NULL DEFAULT 0,
+  temp_password_expires_at TEXT,
   created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );

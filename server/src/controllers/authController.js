@@ -25,6 +25,7 @@ export function serializeUser(user) {
     jobTitle: user.jobTitle,
     phone: user.phone,
     avatarUrl: user.avatarUrl,
+    mustChangePassword: Boolean(user.mustChangePassword),
     permissions: user.isSuperAdmin ? ['*'] : [...user.permissions].sort(),
   };
 }
@@ -35,7 +36,7 @@ export const login = asyncHandler(async (req, res) => {
 
   const row = db
     .prepare(
-      `SELECT id, password_hash, status, company_id
+      `SELECT id, password_hash, status, company_id, must_change_password, temp_password_expires_at
        FROM users WHERE email = ?`
     )
     .get(email);
@@ -58,6 +59,17 @@ export const login = asyncHandler(async (req, res) => {
   }
 
   const now = new Date().toISOString();
+
+  // Temporary credentials are single-use only while valid: once the expiry
+  // window has passed the generated password no longer grants access and the
+  // Super Admin must issue new credentials.
+  if (row.must_change_password) {
+    if (!row.temp_password_expires_at || row.temp_password_expires_at < now) {
+      req.audit?.('auth.login_failed', { entityType: 'user', entityId: row.id, companyId: row.company_id ?? null, metadata: { email: String(email).toLowerCase(), reason: 'temp_password_expired' } });
+      throw unauthorized('Your temporary password has expired. Please contact your administrator for new credentials.');
+    }
+  }
+
   db.prepare('UPDATE users SET last_login_at = ? WHERE id = ?').run(now, row.id);
 
   const user = getUserContext(row.id);
@@ -144,12 +156,29 @@ export const changePassword = asyncHandler(async (req, res) => {
     throw badRequest('Current password is incorrect');
   }
 
-  db.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?').run(
-    hashPassword(newPassword),
-    new Date().toISOString(),
-    req.user.id
-  );
+  db.prepare(
+    `UPDATE users
+     SET password_hash = ?, updated_at = ?, must_change_password = 0, temp_password_expires_at = NULL
+     WHERE id = ?`
+  ).run(hashPassword(newPassword), new Date().toISOString(), req.user.id);
 
   req.audit?.('auth.change_password', { entityType: 'user', entityId: req.user.id });
+  return ok(res, { changed: true });
+});
+
+// Forced first-login password replacement. A Company Admin who was issued
+// temporary credentials is locked into this flow until they set a new password;
+// the temporary password is never accepted again once replaced.
+export const setPassword = asyncHandler(async (req, res) => {
+  const { newPassword } = req.body;
+  const db = getDb();
+
+  db.prepare(
+    `UPDATE users
+     SET password_hash = ?, updated_at = ?, must_change_password = 0, temp_password_expires_at = NULL
+     WHERE id = ?`
+  ).run(hashPassword(newPassword), new Date().toISOString(), req.user.id);
+
+  req.audit?.('auth.set_password', { entityType: 'user', entityId: req.user.id });
   return ok(res, { changed: true });
 });

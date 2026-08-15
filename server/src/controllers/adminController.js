@@ -3,7 +3,8 @@ import crypto from 'node:crypto';
 import { notFound, conflict, badRequest } from '../lib/httpError.js';
 import { ok, created, paginated } from '../lib/response.js';
 import { asyncHandler } from '../lib/asyncHandler.js';
-import { hashPassword } from '../lib/password.js';
+import { hashPassword, generateTemporaryPassword } from '../lib/password.js';
+import { env } from '../config/env.js';
 import { MODULES, CORE_MODULES } from '../config/modules.js';
 import { resolveLicense, resolveLicenseState, getUserCount, loadTenant, assertUserLimit, lifecycleFromTenant, resolveTenantLifecycle } from '../services/licenseService.js';
 import { aiStatus, testAiConnection } from '../services/aiService.js';
@@ -596,6 +597,73 @@ export const inviteCompanyAdmin = asyncHandler(async (req, res) => {
     email,
     status: 'pending',
     ...(await notifyInvite({ to: email, companyName: company.name, adminName: name, token: invitationToken })),
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Temporary credentials (Super Admin only). Issues a cryptographically strong
+// temporary password for a Company Admin, marked `must_change_password`. The
+// plaintext password is returned exactly once here and never again, never
+// stored, and never written to logs or audit trails.
+// ---------------------------------------------------------------------------
+export const generateAdminCredentials = asyncHandler(async (req, res) => {
+  const db = getDb();
+  const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(req.params.id);
+  if (!company) throw notFound('Client not found');
+
+  const { name, email } = req.body;
+
+  const adminRole = db.prepare("SELECT id, key FROM roles WHERE key = 'business_owner'").get();
+  if (!adminRole) throw badRequest('business_owner role missing');
+
+  // Enforce the tenant's user limit when the license imposes one.
+  assertUserLimit(loadTenant({ companyId: company.id }), company.id);
+
+  const tempPassword = generateTemporaryPassword();
+  const passwordHash = hashPassword(tempPassword);
+  const expiresAt = new Date(Date.now() + env.tempCredentialTtlHours * 3600000).toISOString();
+  const now = new Date().toISOString();
+
+  let userId;
+  const existing = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+  if (existing) {
+    if (existing.company_id !== company.id) {
+      throw conflict('This email already belongs to another client');
+    }
+    db.prepare(
+      `UPDATE users
+       SET name = ?, role_id = ?, password_hash = ?, status = 'active',
+           must_change_password = 1, temp_password_expires_at = ?,
+           invitation_token = NULL, invitation_expires_at = NULL, updated_at = ?
+       WHERE id = ?`
+    ).run(name, adminRole.id, passwordHash, expiresAt, now, existing.id);
+    userId = existing.id;
+  } else {
+    const result = db
+      .prepare(
+        `INSERT INTO users (company_id, role_id, name, email, password_hash, status, must_change_password, temp_password_expires_at)
+         VALUES (?, ?, ?, ?, ?, 'active', 1, ?)`
+      )
+      .run(company.id, adminRole.id, name, email, passwordHash, expiresAt);
+    userId = Number(result.lastInsertRowid);
+  }
+
+  // Never include the generated password (or its hash) in the audit metadata.
+  req.audit?.('tenant.generate_credentials', {
+    entityType: 'user',
+    entityId: userId,
+    metadata: { email, companyId: company.id, expiresAt, reset: Boolean(existing) },
+  });
+
+  const loginUrl = env.appUrl ? `${env.appUrl.replace(/\/+$/, '')}/login` : '/login';
+
+  return ok(res, {
+    company: company.name,
+    username: email,
+    tempPassword,
+    loginUrl,
+    expiresAt,
+    userId,
   });
 });
 

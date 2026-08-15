@@ -64,11 +64,29 @@ function authenticateRequest(req, next, { assertLicense }) {
     }
     req.tenant = tenant;
 
+    // Forced password replacement: a non-super-admin account issued temporary
+    // credentials is blocked from every surface except the minimal auth
+    // endpoints needed to inspect their session, log out, or replace the
+    // temporary password. Tenant/RBAC enforcement above still applies.
+    if (!user.isSuperAdmin && user.mustChangePassword) {
+      const path = `${req.baseUrl || ''}${req.path || ''}`;
+      if (!PASSWORD_CHANGE_ALLOWED.has(path)) {
+        throw new HttpError(403, 'You must set a new password before continuing.', { code: 'PASSWORD_CHANGE_REQUIRED' });
+      }
+    }
+
     next();
   } catch (err) {
     next(err);
   }
 }
+
+const PASSWORD_CHANGE_ALLOWED = new Set([
+  '/api/auth/me',
+  '/api/auth/logout',
+  '/api/auth/change-password',
+  '/api/auth/set-password',
+]);
 
 export function requireAuth(req, _res, next) {
   if (!req.user) return next(unauthorized());

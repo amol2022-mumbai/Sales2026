@@ -3,6 +3,7 @@ import ProtectedRoute from './components/ProtectedRoute.jsx';
 import AppLayout from './components/layout/AppLayout.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import AcceptInvitePage from './pages/AcceptInvitePage.jsx';
+import ChangePasswordPage from './pages/ChangePasswordPage.jsx';
 import OnboardingPage from './pages/OnboardingPage.jsx';
 import DashboardPage from './pages/DashboardPage.jsx';
 import ProfilePage from './pages/ProfilePage.jsx';
@@ -39,6 +40,7 @@ export default function App() {
       <Route path="/accept-invite" element={<AcceptInvitePage />} />
 
       <Route element={<ProtectedRoute />}>
+        <Route path="/change-password" element={<ChangePasswordPage />} />
         <Route element={<AppLayout />}>
           <Route index element={<DashboardPage />} />
           <Route path="/onboarding" element={<OnboardingPage />} />

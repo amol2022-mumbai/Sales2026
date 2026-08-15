@@ -69,6 +69,10 @@ export const env = {
   smtpUser: process.env.SMTP_USER || '',
   smtpPass: process.env.SMTP_PASS || '',
   smtpFrom: process.env.SMTP_FROM || '',
+  // Temporary credentials (Super Admin "Generate Temporary Credentials").
+  // How long generated temporary passwords remain valid (hours) before the
+  // Super Admin must generate new ones.
+  tempCredentialTtlHours: toInt(process.env.TEMP_CREDENTIAL_TTL_HOURS, 24),
 };
 
 export function validateEnv(config = env) {

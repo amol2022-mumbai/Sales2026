@@ -84,6 +84,12 @@ export function applyIncrementalMigrations(db) {
   ensureColumn(db, 'users', 'invitation_token', 'TEXT');
   ensureColumn(db, 'users', 'invitation_expires_at', 'TEXT');
 
+  // Temporary credentials (Super Admin "Generate Temporary Credentials"):
+  // accounts that must replace their temporary password on first login, with a
+  // configurable expiry timestamp.
+  ensureColumn(db, 'users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'users', 'temp_password_expires_at', 'TEXT');
+
   // Tenant lifecycle (Phase 15): first-login onboarding completion and
   // explicit activation timestamps.
   ensureColumn(db, 'companies', 'onboarded_at', 'TEXT');

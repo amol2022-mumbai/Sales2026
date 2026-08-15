@@ -18,6 +18,17 @@ export default function ProtectedRoute() {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
+  // Forced password replacement: an account issued temporary credentials is
+  // locked into the change-password screen until it sets a new password.
+  const needsPasswordChange = !user.isSuperAdmin && user.mustChangePassword;
+  const onPasswordChange = location.pathname === '/change-password';
+  if (needsPasswordChange && !onPasswordChange) {
+    return <Navigate to="/change-password" replace />;
+  }
+  if (!needsPasswordChange && onPasswordChange) {
+    return <Navigate to="/" replace />;
+  }
+
   // Company Admin first-login gate: route an un-onboarded business owner to the
   // onboarding flow, and keep already-onboarded users off it.
   const needsOnboarding = !user.isSuperAdmin && user.roleKey === 'business_owner' && tenant && !tenant.onboardedAt;

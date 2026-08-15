@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { loginSchema, changePasswordSchema, updateProfileSchema, acceptInviteSchema } from '../schemas/index.js';
+import { loginSchema, changePasswordSchema, setPasswordSchema, updateProfileSchema, acceptInviteSchema } from '../schemas/index.js';
 import {
   login,
   me,
   logout,
   changePassword,
+  setPassword,
   updateProfile,
   acceptInvite,
 } from '../controllers/authController.js';
@@ -22,5 +23,6 @@ router.get('/me', me);
 router.post('/logout', logout);
 router.put('/me', validate(updateProfileSchema), updateProfile);
 router.post('/change-password', validate(changePasswordSchema), changePassword);
+router.post('/set-password', validate(setPasswordSchema), setPassword);
 
 export default router;

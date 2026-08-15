@@ -17,6 +17,7 @@ export const adminApi = {
     create: (payload) => apiFetch('/admin/clients', { method: 'POST', body: payload }),
     update: (id, payload) => apiFetch(`/admin/clients/${id}`, { method: 'PUT', body: payload }),
     inviteAdmin: (id, payload) => apiFetch(`/admin/clients/${id}/invite-admin`, { method: 'POST', body: payload }),
+    generateCredentials: (id, payload) => apiFetch(`/admin/clients/${id}/admin-credentials`, { method: 'POST', body: payload }),
     onboard: (payload) => apiFetch('/admin/clients/onboard', { method: 'POST', body: payload }),
     activate: (id) => apiFetch(`/admin/clients/${id}/activate`, { method: 'POST' }),
     suspend: (id) => apiFetch(`/admin/clients/${id}/suspend`, { method: 'POST' }),
@@ -68,6 +69,7 @@ export const authApi = {
   logout: () => apiFetch('/auth/logout', { method: 'POST' }),
   changePassword: (currentPassword, newPassword) =>
     apiFetch('/auth/change-password', { method: 'POST', body: { currentPassword, newPassword } }),
+  setPassword: (newPassword) => apiFetch('/auth/set-password', { method: 'POST', body: { newPassword } }),
   updateProfile: (payload) => apiFetch('/auth/me', { method: 'PUT', body: payload }),
 };
 

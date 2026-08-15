@@ -16,6 +16,12 @@ export const changePasswordSchema = z.object({
   newPassword: password,
 });
 
+// Forced first-login password replacement (temporary credentials flow): the
+// user is already authenticated but must choose a new password.
+export const setPasswordSchema = z.object({
+  newPassword: password,
+});
+
 export const updateProfileSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   phone: z.string().trim().max(30).nullable().optional(),
@@ -920,6 +926,14 @@ export const inviteAdminSchema = z.object({
 export const acceptInviteSchema = z.object({
   token: z.string().trim().min(16).max(200),
   password,
+});
+
+// Super Admin "Generate Temporary Credentials": name + email of the Company
+// Admin to issue temporary credentials for. The password itself is generated
+// server-side and never supplied by the caller.
+export const generateAdminCredentialsSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  email,
 });
 
 // ---------------------------------------------------------------------------

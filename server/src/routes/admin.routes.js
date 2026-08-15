@@ -11,6 +11,7 @@ import {
   idParamSchema,
   companyIdParamSchema,
   inviteAdminSchema,
+  generateAdminCredentialsSchema,
   createSubscriptionInvoiceSchema,
   recordSubscriptionPaymentSchema,
   changePlanSchema,
@@ -24,6 +25,7 @@ import {
   createClient,
   updateClient,
   inviteCompanyAdmin,
+  generateAdminCredentials,
   onboardTenant,
   activateTenant,
   suspendTenant,
@@ -78,6 +80,7 @@ router.post('/clients/onboard', validate(onboardTenantSchema), onboardTenant);
 router.get('/clients/:id', validate(idParamSchema, 'params'), getClient);
 router.put('/clients/:id', validate(idParamSchema, 'params'), validate(updateClientSchema), updateClient);
 router.post('/clients/:id/invite-admin', validate(idParamSchema, 'params'), validate(inviteAdminSchema), inviteCompanyAdmin);
+router.post('/clients/:id/admin-credentials', validate(idParamSchema, 'params'), validate(generateAdminCredentialsSchema), generateAdminCredentials);
 router.post('/clients/:id/activate', validate(idParamSchema, 'params'), activateTenant);
 router.post('/clients/:id/suspend', validate(idParamSchema, 'params'), suspendTenant);
 router.post('/clients/:id/deactivate', validate(idParamSchema, 'params'), deactivateTenant);

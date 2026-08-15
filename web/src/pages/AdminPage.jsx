@@ -241,6 +241,11 @@ function ClientsTab() {
   const [inviteForm, setInviteForm] = useState({ name: '', email: '' });
   const [inviteResult, setInviteResult] = useState(null);
   const [sendingInvite, setSendingInvite] = useState(false);
+  const [credFor, setCredFor] = useState(null);
+  const [credForm, setCredForm] = useState({ name: '', email: '' });
+  const [credResult, setCredResult] = useState(null);
+  const [sendingCreds, setSendingCreds] = useState(false);
+  const [copiedCreds, setCopiedCreds] = useState(false);
   const [onboarding, setOnboarding] = useState(false);
   const [onboardForm, setOnboardForm] = useState({});
   const [onboardResult, setOnboardResult] = useState(null);
@@ -347,6 +352,45 @@ function ClientsTab() {
     }
   }
 
+  function openCredentials(c) {
+    setCredFor(c);
+    setCredForm({ name: '', email: '' });
+    setCredResult(null);
+    setCopiedCreds(false);
+  }
+
+  async function sendCredentials() {
+    setSendingCreds(true);
+    setError(null);
+    setCredResult(null);
+    setCopiedCreds(false);
+    try {
+      const res = await adminApi.clients.generateCredentials(credFor.id, credForm);
+      setCredResult(res);
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSendingCreds(false);
+    }
+  }
+
+  async function copyCredentials() {
+    if (!credResult) return;
+    const text = [
+      `Company: ${credResult.company}`,
+      `Username: ${credResult.username}`,
+      `Temporary password: ${credResult.tempPassword}`,
+      `Login URL: ${credResult.loginUrl.startsWith('/') ? `${window.location.origin}${credResult.loginUrl}` : credResult.loginUrl}`,
+    ].join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedCreds(true);
+    } catch {
+      setCopiedCreds(false);
+    }
+  }
+
   async function openOnboard() {
     setError(null);
     setOnboardResult(null);
@@ -399,6 +443,7 @@ function ClientsTab() {
 
   const update = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const updateInvite = (k) => (e) => setInviteForm((f) => ({ ...f, [k]: e.target.value }));
+  const updateCred = (k) => (e) => setCredForm((f) => ({ ...f, [k]: e.target.value }));
   const updateOnboard = (k) => (e) => setOnboardForm((f) => ({ ...f, [k]: e.target.value }));
 
   if (loading) {
@@ -494,6 +539,9 @@ function ClientsTab() {
                   <button type="button" className="ml-3 text-sm font-medium text-brand-600 hover:text-brand-700" onClick={() => openInvite(c)}>
                     <UserPlus className="mr-1 inline h-4 w-4" />Invite admin
                   </button>
+                  <button type="button" className="ml-3 text-sm font-medium text-brand-600 hover:text-brand-700" onClick={() => openCredentials(c)}>
+                    <KeyRound className="mr-1 inline h-4 w-4" />Generate credentials
+                  </button>
                   <button type="button" className="ml-3 text-sm font-medium text-brand-600 hover:text-brand-700" onClick={() => openEdit(c)}>
                     Edit
                   </button>
@@ -584,6 +632,71 @@ function ClientsTab() {
             {sendingInvite ? <Spinner className="h-4 w-4" /> : 'Send invitation'}
           </button>
         </div>
+      </Modal>
+
+      <Modal open={!!credFor} title={`Generate temporary credentials — ${credFor?.name || ''}`} onClose={() => setCredFor(null)}>
+        {credResult ? (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <p className="font-medium">Copy these credentials now</p>
+              <p className="mt-1 text-xs">
+                This temporary password is shown only once. It cannot be retrieved again after you close this window.
+              </p>
+            </div>
+            <dl className="space-y-2 text-sm">
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">Company</dt>
+                <dd className="font-medium text-slate-800">{credResult.company}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">Username</dt>
+                <dd className="font-medium text-slate-800">{credResult.username}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">Temporary password</dt>
+                <dd className="font-mono font-medium text-slate-800">{credResult.tempPassword}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">Login URL</dt>
+                <dd className="break-all font-medium text-slate-800">
+                  {credResult.loginUrl.startsWith('/') ? `${window.location.origin}${credResult.loginUrl}` : credResult.loginUrl}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">Expires</dt>
+                <dd className="font-medium text-slate-800">{new Date(credResult.expiresAt).toLocaleString()}</dd>
+              </div>
+            </dl>
+            <div className="flex justify-end gap-3">
+              <button type="button" className="btn-primary" onClick={copyCredentials}>
+                {copiedCreds ? 'Copied' : 'Copy credentials'}
+              </button>
+              <button type="button" className="btn-secondary" onClick={() => setCredFor(null)}>Done</button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-500">
+              A temporary password will be generated and the admin must set a new password on first login.
+            </p>
+            <div>
+              <label className="label">Full name</label>
+              <input className="input" value={credForm.name} onChange={updateCred('name')} placeholder="Jane Doe" />
+            </div>
+            <div>
+              <label className="label">Email</label>
+              <input className="input" type="email" value={credForm.email} onChange={updateCred('email')} placeholder="jane@company.com" />
+            </div>
+          </div>
+        )}
+        {!credResult && (
+          <div className="mt-4 flex justify-end gap-3">
+            <button type="button" className="btn-secondary" onClick={() => setCredFor(null)}>Cancel</button>
+            <button type="button" className="btn-primary" disabled={sendingCreds || !credForm.name || !credForm.email} onClick={sendCredentials}>
+              {sendingCreds ? <Spinner className="h-4 w-4" /> : 'Generate credentials'}
+            </button>
+          </div>
+        )}
       </Modal>
 
       <Modal open={onboarding} title="Onboard tenant" onClose={() => setOnboarding(false)}>

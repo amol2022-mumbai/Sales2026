@@ -91,7 +91,16 @@ export function AuthProvider({ children }) {
     return data.user;
   }, [setTenantBranding]);
 
-  const value = { user, tenant, loading, login, acceptInvite, logout, refreshUser, setUser };
+  const setPassword = useCallback(async (newPassword) => {
+    await authApi.setPassword(newPassword);
+    const data = await authApi.me();
+    setUser(data.user);
+    setTenant(data.tenant || null);
+    setTenantBranding(data.tenant);
+    return data.user;
+  }, [setTenantBranding]);
+
+  const value = { user, tenant, loading, login, acceptInvite, logout, refreshUser, setUser, setPassword };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

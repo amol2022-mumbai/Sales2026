@@ -10,6 +10,7 @@ export function getUserContext(userId) {
     .prepare(
       `SELECT u.id, u.company_id, u.role_id, u.team_id, u.name, u.email,
               u.status, u.job_title, u.phone, u.avatar_url, u.last_login_at,
+              u.must_change_password,
               r.key AS role_key, r.name AS role_name, r.is_super_admin
        FROM users u
        JOIN roles r ON r.id = u.role_id
@@ -46,6 +47,7 @@ export function getUserContext(userId) {
     avatarUrl: user.avatar_url,
     status: user.status,
     lastLoginAt: user.last_login_at,
+    mustChangePassword: Boolean(user.must_change_password),
     permissions: new Set(permissions),
   };
 }
