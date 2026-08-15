@@ -39,6 +39,8 @@ import {
   platformDashboard,
   aiConfigStatus,
   aiConfigTest,
+  getClientEntitlements,
+  getClientUsage,
 } from '../controllers/adminController.js';
 import {
   listSubscriptions,
@@ -79,6 +81,8 @@ router.post('/clients/:id/invite-admin', validate(idParamSchema, 'params'), vali
 router.post('/clients/:id/activate', validate(idParamSchema, 'params'), activateTenant);
 router.post('/clients/:id/suspend', validate(idParamSchema, 'params'), suspendTenant);
 router.post('/clients/:id/deactivate', validate(idParamSchema, 'params'), deactivateTenant);
+router.get('/clients/:id/entitlements', validate(idParamSchema, 'params'), getClientEntitlements);
+router.get('/clients/:id/usage', validate(idParamSchema, 'params'), getClientUsage);
 
 // Plans
 router.get('/plans', listPlans);

@@ -23,6 +23,7 @@ import {
   planPrice,
   processWebhookEvent,
 } from '../services/billingService.js';
+import { getUsageReport } from '../services/entitlementService.js';
 
 function tenantCompany(req) {
   const company = req.tenant?.company ?? null;
@@ -56,6 +57,15 @@ export const getBillingPayments = asyncHandler(async (req, res) => {
 export const getBillingEvents = asyncHandler(async (req, res) => {
   const company = tenantCompany(req);
   return ok(res, listCompanyEvents(getDb(), company.id));
+});
+
+/**
+ * Tenant self-service usage: the current tenant's feature-limit utilization.
+ * Always scoped to the authenticated tenant (never another tenant's quota).
+ */
+export const getBillingUsage = asyncHandler(async (req, res) => {
+  const company = tenantCompany(req);
+  return ok(res, getUsageReport(getDb(), company.id));
 });
 
 /**

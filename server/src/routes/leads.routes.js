@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authenticate, requireModule, requireExport } from '../middleware/auth.js';
+import { requireFeatureLimit, consumeFeature } from '../middleware/entitlements.js';
 import { authorize } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
 import {
@@ -35,11 +36,11 @@ router.use(authenticate, requireModule('leads'));
 router.get('/', authorize('leads:view'), validate(listLeadsQuerySchema, 'query'), listLeads);
 router.get('/dashboard', authorize('leads:view'), leadDashboard);
 router.get('/meta', authorize('leads:view'), leadMeta);
-router.get('/export', requireExport, authorize('leads:export'), validate(exportLeadsQuerySchema, 'query'), exportLeads);
+router.get('/export', requireExport, authorize('leads:export'), validate(exportLeadsQuerySchema, 'query'), consumeFeature('exports'), exportLeads);
 router.post('/import', authorize('leads:create'), validate(importLeadsSchema), importLeads);
 router.post('/bulk-assign', authorize('leads:assign'), validate(bulkAssignLeadsSchema), bulkAssign);
 router.post('/bulk-status', authorize('leads:edit'), validate(bulkStatusLeadsSchema), bulkStatus);
-router.post('/', authorize('leads:create'), validate(createLeadSchema), createLead);
+router.post('/', authorize('leads:create'), validate(createLeadSchema), requireFeatureLimit('leads'), createLead);
 router.get('/:id', authorize('leads:view'), validate(idParamSchema, 'params'), getLead);
 router.put('/:id', authorize('leads:edit'), validate(idParamSchema, 'params'), validate(updateLeadSchema), updateLead);
 router.delete('/:id', authorize('leads:delete'), validate(idParamSchema, 'params'), deleteLead);

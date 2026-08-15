@@ -7,6 +7,7 @@ import { hashPassword } from '../lib/password.js';
 import { MODULES, CORE_MODULES } from '../config/modules.js';
 import { resolveLicense, resolveLicenseState, getUserCount, loadTenant, assertUserLimit, lifecycleFromTenant, resolveTenantLifecycle } from '../services/licenseService.js';
 import { aiStatus, testAiConnection } from '../services/aiService.js';
+import { getPlanLimitMap, applyPlanLimits, applyLicenseLimits, getEffectiveEntitlements, getUsageReport, validateFeatureLimits } from '../services/entitlementService.js';
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -29,7 +30,7 @@ function parseJsonModules(value) {
   }
 }
 
-export function planToJson(p) {
+export function planToJson(p, limits = {}) {
   return {
     id: p.id,
     key: p.key,
@@ -46,6 +47,7 @@ export function planToJson(p) {
     apiEnabled: Boolean(p.api_enabled),
     licenseDurationDays: p.license_duration_days,
     trialDays: p.trial_days,
+    limits,
     createdAt: p.created_at,
     updatedAt: p.updated_at,
   };
@@ -565,20 +567,21 @@ export const inviteCompanyAdmin = asyncHandler(async (req, res) => {
 export const listPlans = asyncHandler(async (_req, res) => {
   const db = getDb();
   const rows = db.prepare('SELECT * FROM plans ORDER BY sort_order, id').all();
-  return ok(res, rows.map(planToJson));
+  return ok(res, rows.map((p) => planToJson(p, Object.fromEntries(getPlanLimitMap(db, p.id)))));
 });
 
 export const getPlan = asyncHandler(async (req, res) => {
   const db = getDb();
   const plan = db.prepare('SELECT * FROM plans WHERE id = ?').get(req.params.id);
   if (!plan) throw notFound('Plan not found');
-  return ok(res, planToJson(plan));
+  return ok(res, planToJson(plan, Object.fromEntries(getPlanLimitMap(db, plan.id))));
 });
 
 export const createPlan = asyncHandler(async (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT id FROM plans WHERE key = ?').get(req.body.key);
   if (existing) throw conflict('A plan with this key already exists');
+  validateFeatureLimits(req.body.limits ?? null);
 
   const result = db.prepare(
     `INSERT INTO plans (key, name, description, user_limit, modules, price_monthly, price_annual, sort_order, is_active, storage_limit_mb, export_enabled, api_enabled, license_duration_days, trial_days)
@@ -602,14 +605,18 @@ export const createPlan = asyncHandler(async (req, res) => {
 
   req.audit?.('plan.create', { entityType: 'plan', entityId: Number(result.lastInsertRowid), metadata: { key: req.body.key } });
 
-  const plan = db.prepare('SELECT * FROM plans WHERE id = ?').get(Number(result.lastInsertRowid));
-  return created(res, planToJson(plan));
+  const planId = Number(result.lastInsertRowid);
+  applyPlanLimits(db, planId, req.body.limits ?? null);
+
+  const plan = db.prepare('SELECT * FROM plans WHERE id = ?').get(planId);
+  return created(res, planToJson(plan, Object.fromEntries(getPlanLimitMap(db, planId))));
 });
 
 export const updatePlan = asyncHandler(async (req, res) => {
   const db = getDb();
   const plan = db.prepare('SELECT * FROM plans WHERE id = ?').get(req.params.id);
   if (!plan) throw notFound('Plan not found');
+  validateFeatureLimits(req.body.limits ?? null);
 
   const sets = [];
   const values = [];
@@ -653,10 +660,14 @@ export const updatePlan = asyncHandler(async (req, res) => {
     db.prepare(`UPDATE plans SET ${sets.join(', ')} WHERE id = ?`).run(...values);
   }
 
+  if (req.body.limits !== undefined) {
+    applyPlanLimits(db, plan.id, req.body.limits);
+  }
+
   req.audit?.('plan.update', { entityType: 'plan', entityId: plan.id });
 
   const updated = db.prepare('SELECT * FROM plans WHERE id = ?').get(plan.id);
-  return ok(res, planToJson(updated));
+  return ok(res, planToJson(updated, Object.fromEntries(getPlanLimitMap(db, plan.id))));
 });
 
 // ---------------------------------------------------------------------------
@@ -698,6 +709,7 @@ export const upsertLicense = asyncHandler(async (req, res) => {
   const companyId = Number(req.params.id);
   const company = db.prepare('SELECT id FROM companies WHERE id = ?').get(companyId);
   if (!company) throw notFound('Client not found');
+  validateFeatureLimits(req.body.limits ?? null);
 
   let plan = null;
   if (req.body.planId != null) {
@@ -803,6 +815,9 @@ export const upsertLicense = asyncHandler(async (req, res) => {
   req.audit?.('license.upsert', { entityType: 'company', entityId: companyId });
 
   const license = db.prepare('SELECT * FROM licenses WHERE company_id = ?').get(companyId);
+  if (req.body.limits !== undefined) {
+    applyLicenseLimits(db, license.id, req.body.limits);
+  }
   return ok(res, licenseToJson(license, companyId));
 });
 
@@ -814,6 +829,26 @@ export const listModules = asyncHandler(async (_req, res) => {
     modules: MODULES,
     core: CORE_MODULES,
   });
+});
+
+// ---------------------------------------------------------------------------
+// Tenant entitlements & usage — Super Admin only. Read-only views of a client's
+// effective plan entitlements and metered/derived usage.
+// ---------------------------------------------------------------------------
+export const getClientEntitlements = asyncHandler(async (req, res) => {
+  const db = getDb();
+  const companyId = Number(req.params.id);
+  const company = db.prepare('SELECT id FROM companies WHERE id = ?').get(companyId);
+  if (!company) throw notFound('Client not found');
+  return ok(res, getEffectiveEntitlements(db, companyId));
+});
+
+export const getClientUsage = asyncHandler(async (req, res) => {
+  const db = getDb();
+  const companyId = Number(req.params.id);
+  const company = db.prepare('SELECT id FROM companies WHERE id = ?').get(companyId);
+  if (!company) throw notFound('Client not found');
+  return ok(res, getUsageReport(db, companyId));
 });
 
 // ---------------------------------------------------------------------------

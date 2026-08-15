@@ -98,6 +98,57 @@ CREATE INDEX IF NOT EXISTS idx_licenses_status ON licenses(status);
 CREATE INDEX IF NOT EXISTS idx_licenses_expiry ON licenses(expires_at);
 
 -- ---------------------------------------------------------------------------
+-- Plan feature limits (Phase 19): per-plan defaults for named limitable
+-- features (see config/limits.js). A row is only present for features the
+-- Super Admin has configured; `limit_value` = -1 means explicitly unlimited.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS plan_limits (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  plan_id     INTEGER NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+  feature_key TEXT    NOT NULL,
+  limit_value INTEGER NOT NULL DEFAULT -1,
+  created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  UNIQUE (plan_id, feature_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_plan_limits_plan ON plan_limits(plan_id);
+
+-- ---------------------------------------------------------------------------
+-- License feature limit overrides (Phase 19): per-tenant overrides of the
+-- plan defaults. Absent rows inherit the plan; explicit rows win over the plan.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS license_limits (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  license_id  INTEGER NOT NULL REFERENCES licenses(id) ON DELETE CASCADE,
+  feature_key TEXT    NOT NULL,
+  limit_value INTEGER NOT NULL DEFAULT -1,
+  created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  UNIQUE (license_id, feature_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_license_limits_license ON license_limits(license_id);
+
+-- ---------------------------------------------------------------------------
+-- Usage records (Phase 19): per-tenant, per-feature metered consumption for
+-- monthly features. `period_key` is `YYYY-MM` for monthly features (resets each
+-- calendar month). Absolute features derive usage from their source tables and
+-- are not stored here. Strict tenant isolation via `company_id`.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS usage_records (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  company_id  INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  feature_key TEXT    NOT NULL,
+  period_key  TEXT    NOT NULL,
+  count       INTEGER NOT NULL DEFAULT 0,
+  updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  UNIQUE (company_id, feature_key, period_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_usage_records_company ON usage_records(company_id, feature_key);
+
+-- ---------------------------------------------------------------------------
 -- Subscription invoices: billing records issued to a tenant for their plan
 -- (subscription billing). Distinct from the `invoices` table, which records a
 -- tenant's own receivable/collection invoices against their customers. `status`

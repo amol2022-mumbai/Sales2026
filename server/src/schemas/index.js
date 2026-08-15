@@ -678,6 +678,8 @@ export const updateClientSchema = z.object({
   status: z.enum(['active', 'inactive', 'suspended']).optional(),
 });
 
+const featureLimitsObjectSchema = z.record(z.string().trim().min(1), z.number().int().min(-1));
+
 export const createPlanSchema = z.object({
   key: z.string().trim().min(1).max(60).regex(/^[a-z0-9_]+$/, 'key must be lowercase letters, numbers, underscores'),
   name: z.string().trim().min(1).max(120),
@@ -693,6 +695,7 @@ export const createPlanSchema = z.object({
   apiEnabled: z.boolean().default(false),
   licenseDurationDays: z.number().int().min(0).default(0),
   trialDays: z.number().int().min(0).default(0),
+  limits: featureLimitsObjectSchema.optional(),
 });
 
 export const updatePlanSchema = z.object({
@@ -709,6 +712,7 @@ export const updatePlanSchema = z.object({
   apiEnabled: z.boolean().optional(),
   licenseDurationDays: z.number().int().min(0).optional(),
   trialDays: z.number().int().min(0).optional(),
+  limits: featureLimitsObjectSchema.optional(),
 });
 
 export const licenseStatuses = ['active', 'trial', 'past_due', 'expired', 'suspended', 'cancelled'];
@@ -725,6 +729,7 @@ export const upsertLicenseSchema = z.object({
   apiEnabled: z.boolean().nullable().optional(),
   billingCycle: z.enum(['monthly', 'annual']).nullable().optional(),
   autoRenew: z.boolean().nullable().optional(),
+  limits: featureLimitsObjectSchema.optional(),
 });
 
 export const listClientsQuerySchema = paginationQuerySchema.extend({

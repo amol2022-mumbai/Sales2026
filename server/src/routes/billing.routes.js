@@ -9,6 +9,7 @@ import {
   getBillingInvoices,
   getBillingPayments,
   getBillingEvents,
+  getBillingUsage,
   checkout,
   changePlanAction,
   renewAction,
@@ -26,6 +27,7 @@ router.get('/plans', authorize('billing:view'), getBillingPlans);
 router.get('/invoices', authorize('billing:view'), getBillingInvoices);
 router.get('/payments', authorize('billing:view'), getBillingPayments);
 router.get('/events', authorize('billing:view'), getBillingEvents);
+router.get('/usage', authorize('billing:view'), getBillingUsage);
 
 router.post('/checkout', authorize('billing:edit'), validate(checkoutSchema), checkout);
 router.post('/change-plan', authorize('billing:edit'), validate(changePlanSchema), changePlanAction);
