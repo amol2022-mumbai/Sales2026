@@ -11,6 +11,7 @@ function SidebarContent({ onNavigate }) {
     ...section,
     items: section.items.filter(
       (item) =>
+        item.functional &&
         (!item.permission || can(user, item.permission)) &&
         isModuleEnabledForTenant(tenant, item.key)
     ),
@@ -46,11 +47,6 @@ function SidebarContent({ onNavigate }) {
                       <>
                         <item.icon className={`h-[18px] w-[18px] shrink-0 ${isActive ? 'text-brand-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
                         <span className="flex-1 truncate">{item.label}</span>
-                        {!item.functional && (
-                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                            Soon
-                          </span>
-                        )}
                       </>
                     )}
                   </NavLink>

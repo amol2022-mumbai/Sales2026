@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar.jsx';
 import PlatformSidebar from './PlatformSidebar.jsx';
 import Topbar from './Topbar.jsx';
+import LicenseBanner from './LicenseBanner.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 
 export default function AppLayout() {
@@ -15,6 +16,7 @@ export default function AppLayout() {
       <SidebarComponent mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar onMenu={() => setMobileOpen(true)} />
+        <LicenseBanner />
         <main className="flex-1 overflow-x-hidden p-4 lg:p-6">
           <Outlet />
         </main>

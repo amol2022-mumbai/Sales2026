@@ -16,6 +16,7 @@ import { useAuth, can } from '../context/AuthContext.jsx';
 import Card from '../components/ui/Card.jsx';
 import Badge from '../components/ui/Badge.jsx';
 import Spinner from '../components/ui/Spinner.jsx';
+import EmptyState from '../components/ui/EmptyState.jsx';
 import Modal from '../components/ui/Modal.jsx';
 import Pagination from '../components/ui/Pagination.jsx';
 
@@ -453,7 +454,7 @@ export default function LeadsPage() {
             <Spinner className="h-8 w-8 text-brand-600" />
           </div>
         ) : leads.length === 0 ? (
-          <div className="px-6 py-16 text-center text-sm text-slate-500">No leads found.</div>
+          <EmptyState icon={Users} title="No leads yet" description="Leads you create will appear here. Add your first lead to start building your pipeline." />
         ) : (
           <>
             <div className="overflow-x-auto">

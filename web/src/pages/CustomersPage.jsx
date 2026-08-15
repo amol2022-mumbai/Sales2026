@@ -16,6 +16,7 @@ import { useAuth, can } from '../context/AuthContext.jsx';
 import Card from '../components/ui/Card.jsx';
 import Badge from '../components/ui/Badge.jsx';
 import Spinner from '../components/ui/Spinner.jsx';
+import EmptyState from '../components/ui/EmptyState.jsx';
 import Modal from '../components/ui/Modal.jsx';
 import Pagination from '../components/ui/Pagination.jsx';
 
@@ -463,7 +464,7 @@ export default function CustomersPage() {
             <Spinner className="h-8 w-8 text-brand-600" />
           </div>
         ) : customers.length === 0 ? (
-          <div className="px-6 py-16 text-center text-sm text-slate-500">No customers found.</div>
+          <EmptyState icon={UserPlus} title="No customers yet" description="Customers you add will appear here. Add your first customer to attach deals, quotes and orders." />
         ) : (
           <>
             <div className="overflow-x-auto">

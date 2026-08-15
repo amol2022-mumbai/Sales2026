@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Menu, ChevronDown, User, Settings, LogOut } from 'lucide-react';
+import { Menu, ChevronDown, User, Settings, LogOut, HelpCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import GlobalSearch from './GlobalSearch.jsx';
 import NotificationsDropdown from './NotificationsDropdown.jsx';
@@ -86,6 +86,11 @@ export default function Topbar({ onMenu }) {
             {!user?.isSuperAdmin && (
               <Link to="/settings" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
                 <Settings className="h-4 w-4 text-slate-400" /> Company Settings
+              </Link>
+            )}
+            {!user?.isSuperAdmin && (
+              <Link to="/help" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                <HelpCircle className="h-4 w-4 text-slate-400" /> Help &amp; Support
               </Link>
             )}
             <button type="button" onClick={handleLogout} className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-sm text-rose-600 hover:bg-rose-50">
