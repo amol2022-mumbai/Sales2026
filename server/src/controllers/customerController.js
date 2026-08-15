@@ -256,10 +256,25 @@ export const getCustomer = asyncHandler(async (req, res) => {
   customer.complaints = activities.filter((a) => a.type === 'complaint');
   customer.notes = activities.filter((a) => a.type === 'note');
 
-  // Future modules (Sales / Quotations / Orders / Payments) are not built yet;
-  // expose empty buckets so the profile UI is wired end-to-end without fake
-  // data. KPIs read 0/null until those tables exist.
-  customer.quotations = [];
+  // Quotations are built; expose the customer's quotations (newest first).
+  // Sales / Orders / Payments remain future modules with empty buckets so the
+  // profile UI is wired end-to-end without fake data.
+  customer.quotations = db
+    .prepare(
+      `SELECT id, quotation_no, status, total, valid_until, created_at
+       FROM quotations
+       WHERE customer_id = ? AND deleted_at IS NULL
+       ORDER BY created_at DESC, id DESC`
+    )
+    .all(row.id)
+    .map((q) => ({
+      id: q.id,
+      quotationNo: q.quotation_no,
+      status: q.status,
+      total: q.total,
+      validUntil: q.valid_until,
+      createdAt: q.created_at,
+    }));
   customer.orders = [];
   customer.sales = [];
   customer.payments = [];

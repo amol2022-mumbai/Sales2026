@@ -38,7 +38,7 @@ export const NAV_SECTIONS = [
       { key: 'pipeline', label: 'Pipeline', path: '/pipeline', icon: GitBranch, functional: true, permission: 'pipeline:view' },
       { key: 'followups', label: 'Follow-ups', path: '/follow-ups', icon: CalendarClock, functional: true, permission: 'followups:view' },
       { key: 'sales', label: 'Sales', path: '/sales', icon: TrendingUp, permission: 'sales:view' },
-      { key: 'quotations', label: 'Quotations', path: '/quotations', icon: FileText, permission: 'quotations:view' },
+      { key: 'quotations', label: 'Quotations', path: '/quotations', icon: FileText, functional: true, permission: 'quotations:view' },
       { key: 'orders', label: 'Orders', path: '/orders', icon: ShoppingCart, permission: 'orders:view' },
       { key: 'collections', label: 'Collections', path: '/collections', icon: Wallet, functional: true, permission: 'collections:view' },
     ],

@@ -125,6 +125,17 @@ export const productsApi = {
   remove: (id) => apiFetch(`/products/${id}`, { method: 'DELETE' }),
 };
 
+export const quotationsApi = {
+  list: (params = {}) => {
+    const q = new URLSearchParams(params).toString();
+    return apiFetch(`/quotations${q ? `?${q}` : ''}`, { raw: true });
+  },
+  get: (id) => apiFetch(`/quotations/${id}`),
+  create: (payload) => apiFetch('/quotations', { method: 'POST', body: payload }),
+  update: (id, payload) => apiFetch(`/quotations/${id}`, { method: 'PUT', body: payload }),
+  remove: (id) => apiFetch(`/quotations/${id}`, { method: 'DELETE' }),
+};
+
 export const notificationsApi = {
   list: (params = {}) => {
     const q = new URLSearchParams(params).toString();

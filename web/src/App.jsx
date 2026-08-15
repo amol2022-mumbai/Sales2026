@@ -11,6 +11,7 @@ import UserManagementPage from './pages/UserManagementPage.jsx';
 import RolesPermissionsPage from './pages/RolesPermissionsPage.jsx';
 import TeamsPage from './pages/TeamsPage.jsx';
 import ProductsPage from './pages/ProductsPage.jsx';
+import QuotationsPage from './pages/QuotationsPage.jsx';
 import LeadsPage from './pages/LeadsPage.jsx';
 import LeadProfilePage from './pages/LeadProfilePage.jsx';
 import CustomersPage from './pages/CustomersPage.jsx';
@@ -45,6 +46,7 @@ export default function App() {
           <Route path="/roles" element={<RolesPermissionsPage />} />
           <Route path="/sales-team" element={<TeamsPage />} />
           <Route path="/products" element={<ProductsPage />} />
+          <Route path="/quotations" element={<QuotationsPage />} />
           <Route path="/leads" element={<LeadsPage />} />
           <Route path="/leads/:id" element={<LeadProfilePage />} />
           <Route path="/customers" element={<CustomersPage />} />

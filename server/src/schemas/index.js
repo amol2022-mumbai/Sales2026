@@ -659,6 +659,55 @@ export const listProductsQuerySchema = paginationQuerySchema.extend({
   order: z.enum(['asc', 'desc']).optional(),
 });
 
+// ---------------------------------------------------------------------------
+// Quotations (product/service catalogue line items against a customer)
+// ---------------------------------------------------------------------------
+export const quotationStatuses = ['Draft', 'Sent', 'Accepted', 'Rejected', 'Cancelled'];
+
+const quotationItemSchema = z.object({
+  productId: z.number().int().positive().nullable().optional(),
+  name: z.string().trim().min(1).max(200),
+  unit: nullableString(50),
+  quantity: z.coerce.number().positive().default(1),
+  unitPrice: z.coerce.number().min(0).default(0),
+  taxRate: z.coerce.number().min(0).max(100).default(0),
+});
+
+export const createQuotationSchema = z.object({
+  customerId: z.number().int().positive(),
+  opportunityId: nullableId,
+  status: z.enum(quotationStatuses).optional(),
+  validUntil: isoDate,
+  discount: z.coerce.number().min(0).default(0),
+  assignedTo: nullableId,
+  teamId: nullableId,
+  notes: nullableString(1000),
+  items: z.array(quotationItemSchema).min(1, 'At least one line item is required'),
+  companyId: z.number().int().positive().nullable().optional(),
+});
+
+export const updateQuotationSchema = z.object({
+  status: z.enum(quotationStatuses).optional(),
+  validUntil: isoDate,
+  discount: z.coerce.number().min(0).optional(),
+  assignedTo: nullableId,
+  teamId: nullableId,
+  notes: nullableString(1000),
+  items: z.array(quotationItemSchema).min(1).optional(),
+});
+
+export const listQuotationsQuerySchema = paginationQuerySchema.extend({
+  search: z.string().trim().max(100).optional(),
+  status: z.enum([...quotationStatuses, 'Expired']).optional(),
+  customerId: z.coerce.number().int().positive().optional(),
+  assignedTo: z.coerce.number().int().positive().optional(),
+  teamId: z.coerce.number().int().positive().optional(),
+  dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'dateFrom must be YYYY-MM-DD').optional(),
+  dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'dateTo must be YYYY-MM-DD').optional(),
+  sort: z.enum(['quotationNo', 'total', 'status', 'customerName', 'createdAt']).optional(),
+  order: z.enum(['asc', 'desc']).optional(),
+});
+
 export const idParamSchema = z.object({
   id: z.coerce.number().int().positive(),
 });

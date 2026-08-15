@@ -661,6 +661,64 @@ CREATE INDEX IF NOT EXISTS idx_products_status ON products(status);
 CREATE INDEX IF NOT EXISTS idx_products_deleted ON products(deleted_at);
 
 -- ---------------------------------------------------------------------------
+-- Quotations: proposal documents raised against a customer, made of line items
+-- that reference the product catalogue. `subtotal`, `tax_amount` and `total`
+-- are denormalized totals recomputed from line items on every write (never
+-- fabricated from scratch). `status` stores Draft/Sent/Accepted/Rejected/
+-- Cancelled; "Expired" is derived (a Sent quotation past `valid_until`). Soft
+-- delete via `deleted_at`; `quotation_no` is the human-facing Quotation ID.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS quotations (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  quotation_no   TEXT,
+  company_id     INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  customer_id    INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  opportunity_id INTEGER REFERENCES opportunities(id) ON DELETE SET NULL,
+  status         TEXT    NOT NULL DEFAULT 'Draft' CHECK (status IN ('Draft','Sent','Accepted','Rejected','Cancelled')),
+  valid_until    TEXT,
+  subtotal       REAL    NOT NULL DEFAULT 0,
+  tax_amount     REAL    NOT NULL DEFAULT 0,
+  discount       REAL    NOT NULL DEFAULT 0,
+  total          REAL    NOT NULL DEFAULT 0,
+  assigned_to    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  team_id        INTEGER REFERENCES teams(id) ON DELETE SET NULL,
+  notes          TEXT,
+  created_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  deleted_at     TEXT,
+  created_at     TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at     TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_quotations_no ON quotations(quotation_no);
+CREATE INDEX IF NOT EXISTS idx_quotations_company ON quotations(company_id);
+CREATE INDEX IF NOT EXISTS idx_quotations_customer ON quotations(customer_id);
+CREATE INDEX IF NOT EXISTS idx_quotations_opportunity ON quotations(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_quotations_assigned ON quotations(assigned_to);
+CREATE INDEX IF NOT EXISTS idx_quotations_team ON quotations(team_id);
+CREATE INDEX IF NOT EXISTS idx_quotations_status ON quotations(status);
+CREATE INDEX IF NOT EXISTS idx_quotations_deleted ON quotations(deleted_at);
+
+-- ---------------------------------------------------------------------------
+-- Quotation items: line items belonging to a quotation. Each item may link to
+-- a product (snapshot of name/unit/price/tax taken at creation) or be a manual
+-- line. `amount` is quantity * unit_price; tax is aggregated on the quotation.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS quotation_items (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  quotation_id INTEGER NOT NULL REFERENCES quotations(id) ON DELETE CASCADE,
+  product_id   INTEGER REFERENCES products(id) ON DELETE SET NULL,
+  name         TEXT    NOT NULL,
+  unit         TEXT,
+  quantity     REAL    NOT NULL DEFAULT 1,
+  unit_price   REAL    NOT NULL DEFAULT 0,
+  tax_rate     REAL    NOT NULL DEFAULT 0,
+  amount       REAL    NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_quotation_items_quotation ON quotation_items(quotation_id);
+CREATE INDEX IF NOT EXISTS idx_quotation_items_product ON quotation_items(product_id);
+
+-- ---------------------------------------------------------------------------
 -- Invoices: receivable/collection records raised against a customer. `amount`
 -- is the invoiced total; the collected amount is derived from `payments`.
 -- `status` stores Unpaid/Partial/Paid; "Overdue" is derived (unpaid balance
