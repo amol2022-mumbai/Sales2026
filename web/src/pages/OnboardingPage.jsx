@@ -1,12 +1,28 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, Users, UserPlus, CheckCircle2 } from 'lucide-react';
+import { Building2, Users, UserPlus, CheckCircle2, CreditCard, Sparkles, Circle } from 'lucide-react';
 import { companyApi } from '../api/endpoints.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import Card from '../components/ui/Card.jsx';
 import Spinner from '../components/ui/Spinner.jsx';
+import Badge from '../components/ui/Badge.jsx';
 
 const STEPS = ['Welcome', 'Company profile', 'Basic settings', 'Team & users'];
+
+const GETTING_STARTED = [
+  'Complete your company profile and branding',
+  'Choose your currency, timezone and brand colour',
+  'Invite teammates and organise your sales team',
+];
+
+const LICENSE_TONES = {
+  active: 'green',
+  trial: 'indigo',
+  expiring: 'amber',
+  past_due: 'amber',
+  suspended: 'rose',
+  cancelled: 'slate',
+};
 
 export default function OnboardingPage() {
   const { user, tenant, refreshUser } = useAuth();
@@ -31,6 +47,8 @@ export default function OnboardingPage() {
       currency: tenant.currency || 'USD',
       timezone: tenant.timezone || 'UTC',
       brandColor: tenant.brandColor || '#4f46e5',
+      logoUrl: tenant.logoUrl || '',
+      faviconUrl: tenant.faviconUrl || '',
     });
   }, [tenant]);
 
@@ -80,15 +98,69 @@ export default function OnboardingPage() {
       {error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
 
       {step === 0 && (
-        <Card className="p-8 text-center">
-          <h2 className="text-lg font-semibold text-slate-900">Let&apos;s get you started</h2>
-          <p className="mx-auto mt-2 max-w-md text-sm text-slate-500">
-            We&apos;ll guide you through completing your company profile, choosing basic settings, and inviting your team.
-          </p>
-          <button type="button" className="btn-primary mt-6" onClick={() => setStep(1)}>
-            Start setup
-          </button>
-        </Card>
+        <div className="space-y-4">
+          <Card className="p-8 text-center">
+            <h2 className="text-lg font-semibold text-slate-900">Let&apos;s get you started</h2>
+            <p className="mx-auto mt-2 max-w-md text-sm text-slate-500">
+              We&apos;ll guide you through completing your company profile, choosing basic settings, and inviting your team.
+            </p>
+            <button type="button" className="btn-primary mt-6" onClick={() => setStep(1)}>
+              Start setup
+            </button>
+          </Card>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Card className="p-6">
+              <div className="flex items-center gap-2">
+                <CreditCard className="h-5 w-5 text-brand-600" />
+                <h3 className="font-semibold text-slate-900">Plan &amp; license</h3>
+              </div>
+              <dl className="mt-4 space-y-3 text-sm">
+                <div className="flex items-center justify-between gap-4">
+                  <dt className="text-slate-500">Plan</dt>
+                  <dd className="font-medium text-slate-800">{tenant?.license?.planName || 'No plan selected'}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <dt className="text-slate-500">Status</dt>
+                  <dd>
+                    <Badge tone={LICENSE_TONES[tenant?.license?.status] || 'slate'}>
+                      {tenant?.license ? tenant.license.status : 'not provisioned'}
+                    </Badge>
+                  </dd>
+                </div>
+                {tenant?.license?.expiresAt && (
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="text-slate-500">Expires</dt>
+                    <dd className="font-medium text-slate-800">{tenant.license.expiresAt.slice(0, 10)}</dd>
+                  </div>
+                )}
+                <div className="flex items-center justify-between gap-4">
+                  <dt className="text-slate-500">User limit</dt>
+                  <dd className="font-medium text-slate-800">
+                    {tenant?.license?.userLimit != null && tenant.license.userLimit >= 0
+                      ? `${tenant.license.userLimit} seats`
+                      : 'Unlimited'}
+                  </dd>
+                </div>
+              </dl>
+            </Card>
+
+            <Card className="p-6">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-brand-600" />
+                <h3 className="font-semibold text-slate-900">Getting started</h3>
+              </div>
+              <ul className="mt-4 space-y-3 text-sm">
+                {GETTING_STARTED.map((item) => (
+                  <li key={item} className="flex items-center gap-2 text-slate-600">
+                    <Circle className="h-4 w-4 shrink-0 text-slate-300" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          </div>
+        </div>
       )}
 
       {step === 1 && (
@@ -110,6 +182,37 @@ export default function OnboardingPage() {
             <div className="sm:col-span-2">
               <label className="label">Website</label>
               <input className="input" value={form.website || ''} onChange={update('website')} />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="label">Logo URL</label>
+              <div className="flex items-center gap-3">
+                {form.logoUrl ? (
+                  <img
+                    src={form.logoUrl}
+                    alt="Logo preview"
+                    className="h-10 w-10 rounded-lg border border-slate-200 object-contain"
+                  />
+                ) : (
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-slate-300">
+                    <Building2 className="h-5 w-5" />
+                  </div>
+                )}
+                <input
+                  className="input"
+                  placeholder="https://example.com/logo.png"
+                  value={form.logoUrl || ''}
+                  onChange={update('logoUrl')}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="label">Favicon URL</label>
+              <input
+                className="input"
+                placeholder="https://example.com/favicon.ico"
+                value={form.faviconUrl || ''}
+                onChange={update('faviconUrl')}
+              />
             </div>
             <div className="sm:col-span-2">
               <label className="label">Address</label>

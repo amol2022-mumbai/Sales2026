@@ -2,7 +2,7 @@ import { BarChart3 } from 'lucide-react';
 
 /**
  * Lightweight empty chart area. Renders axes/grid so the layout is visible,
- * with a "no data yet" state. Fed with real series data in Phase 2.
+ * with a "no data yet" state shown when a metric has no series data to plot.
  */
 export default function ChartPlaceholder({ title, subtitle = 'No data yet' }) {
   const gridLines = [0, 1, 2, 3, 4];
