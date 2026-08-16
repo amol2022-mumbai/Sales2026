@@ -255,6 +255,59 @@ test('Tenant A cannot read, modify or manage Tenant B users', async () => {
   assert.ok(!list.body.data.some((u) => u.id === betaExecId));
 });
 
+function superAdminId(db) {
+  return db.prepare("SELECT id FROM users WHERE role_id = (SELECT id FROM roles WHERE key = 'super_admin')").get().id;
+}
+
+test('tenant user list never includes the platform Super Admin', async () => {
+  const { request, db, alpha, beta, seed } = setupTenants();
+  const { alphaToken, adminToken } = await tokensFor(request, alpha, beta, seed);
+
+  const list = await request.get('/api/users').set(auth(alphaToken));
+  assert.equal(list.status, 200);
+  assert.ok(!list.body.data.some((u) => u.email === seed.adminEmail));
+  assert.ok(!list.body.data.some((u) => u.roleKey === 'super_admin'));
+  assert.ok(list.body.data.some((u) => u.id === alpha.userId));
+
+  // Tenant cannot fetch the Super Admin's record directly either.
+  assert.equal((await request.get(`/api/users/${superAdminId(db)}`).set(auth(alphaToken))).status, 403);
+
+  // Positive control: the Super Admin still sees the tenant's users.
+  const adminList = await request.get(`/api/users?companyId=${alpha.companyId}`).set(auth(adminToken));
+  assert.equal(adminList.status, 200);
+  assert.ok(adminList.body.data.some((u) => u.id === alpha.userId));
+});
+
+test('global user search does not leak the platform Super Admin to a tenant', async () => {
+  const { request, alpha, beta, seed } = setupTenants();
+  const { alphaToken } = await tokensFor(request, alpha, beta, seed);
+
+  const res = await request.get(`/api/search?q=${encodeURIComponent(seed.adminEmail)}`).set(auth(alphaToken));
+  assert.equal(res.status, 200);
+  assert.ok(!res.body.data.results.users.some((u) => u.email === seed.adminEmail));
+});
+
+test('Super Admin is excluded even when its company_id is set to a tenant', async () => {
+  const { request, db, alpha, beta, seed } = setupTenants();
+  const { alphaToken, adminToken } = await tokensFor(request, alpha, beta, seed);
+
+  // Simulate a corrupt/legacy record where the Super Admin was attached to a
+  // tenant. Tenant scoping must still exclude it.
+  db.prepare('UPDATE users SET company_id = ? WHERE id = ?').run(alpha.companyId, superAdminId(db));
+
+  const list = await request.get('/api/users').set(auth(alphaToken));
+  assert.equal(list.status, 200);
+  assert.ok(!list.body.data.some((u) => u.email === seed.adminEmail));
+  assert.ok(!list.body.data.some((u) => u.roleKey === 'super_admin'));
+
+  assert.equal((await request.get(`/api/users/${superAdminId(db)}`).set(auth(alphaToken))).status, 403);
+
+  // Super Admin still retains global platform access.
+  const adminList = await request.get(`/api/users?companyId=${alpha.companyId}`).set(auth(adminToken));
+  assert.equal(adminList.status, 200);
+  assert.ok(adminList.body.data.some((u) => u.id === alpha.userId));
+});
+
 test('audit logs are scoped to the requesting tenant', async () => {
   const { request, alpha, beta, seed } = setupTenants();
   const { alphaToken } = await tokensFor(request, alpha, beta, seed);

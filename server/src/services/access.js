@@ -44,24 +44,45 @@ export function getUserDataScope(user) {
 }
 
 /**
+ * SQL fragment that excludes platform Super Admin users. Super admins are
+ * global platform accounts and must never surface in a tenant's user list,
+ * even if their `company_id` was (incorrectly) set to a tenant.
+ */
+function excludeSuperAdmins(alias) {
+  return `${alias}.role_id NOT IN (SELECT id FROM roles WHERE is_super_admin = 1)`;
+}
+
+/**
+ * True when `target` is a platform Super Admin. `target.role_id` is present on
+ * the full user rows passed by the user-management controllers; assignment
+ * helpers pass lighter rows (without role_id) and are therefore unaffected.
+ */
+function isSuperAdminUser(target) {
+  if (!target || target.role_id == null) return false;
+  const role = getDb().prepare('SELECT is_super_admin FROM roles WHERE id = ?').get(target.role_id);
+  return Boolean(role?.is_super_admin);
+}
+
+/**
  * Build a WHERE fragment + params that scopes a query over the `users` table
- * (aliased) to the data the acting user is allowed to see.
+ * (aliased) to the data the acting user is allowed to see. Super admins are
+ * always excluded from non-'all' scopes.
  */
 export function buildUserScopeWhere(scope, alias = 'u') {
   switch (scope.type) {
     case 'all':
       return { where: '', params: [] };
     case 'company':
-      return { where: `WHERE ${alias}.company_id = ?`, params: [scope.companyId] };
+      return { where: `WHERE ${alias}.company_id = ? AND ${excludeSuperAdmins(alias)}`, params: [scope.companyId] };
     case 'teams': {
       if (!scope.teamIds.length) return { where: `WHERE ${alias}.id = ?`, params: [scope.selfId] };
       const placeholders = scope.teamIds.map(() => '?').join(', ');
-      return { where: `WHERE (${alias}.team_id IN (${placeholders}) OR ${alias}.id = ?)`, params: [...scope.teamIds, scope.selfId] };
+      return { where: `WHERE (${alias}.team_id IN (${placeholders}) OR ${alias}.id = ?) AND ${excludeSuperAdmins(alias)}`, params: [...scope.teamIds, scope.selfId] };
     }
     case 'team': {
       if (!scope.teamIds.length) return { where: `WHERE ${alias}.id = ?`, params: [scope.selfId] };
       const placeholders = scope.teamIds.map(() => '?').join(', ');
-      return { where: `WHERE (${alias}.team_id IN (${placeholders}) OR ${alias}.id = ?)`, params: [...scope.teamIds, scope.selfId] };
+      return { where: `WHERE (${alias}.team_id IN (${placeholders}) OR ${alias}.id = ?) AND ${excludeSuperAdmins(alias)}`, params: [...scope.teamIds, scope.selfId] };
     }
     case 'self':
       return { where: `WHERE ${alias}.id = ?`, params: [scope.selfId] };
@@ -80,6 +101,7 @@ function selfId(scope) {
  * @param {object} target user row (needs id, company_id, team_id)
  */
 export function canViewUser(scope, target) {
+  if (scope.type !== 'all' && isSuperAdminUser(target)) return false;
   switch (scope.type) {
     case 'all':
       return true;
@@ -100,6 +122,7 @@ export function canViewUser(scope, target) {
  * (edit / deactivate / reset password)?
  */
 export function canManageUser(scope, target) {
+  if (scope.type !== 'all' && isSuperAdminUser(target)) return false;
   switch (scope.type) {
     case 'all':
       return true;
