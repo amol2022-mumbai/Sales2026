@@ -36,9 +36,16 @@ export default function ProtectedRoute() {
 
   // Company Admin first-login gate: route an un-onboarded business owner to the
   // onboarding flow, and keep already-onboarded users off it.
+  //
+  // The Sales Team and Users screens are reachable directly from onboarding
+  // Step 4 ("Create sales team" / "Invite users"), so they are exempt from the
+  // redirect. This lets a business owner set up their team during onboarding
+  // without being bounced back to the Welcome step.
+  const ONBOARDING_EXEMPT_PATHS = ['/sales-team', '/users'];
   const needsOnboarding = !user.isSuperAdmin && user.roleKey === 'business_owner' && tenant && !tenant.onboardedAt;
   const onOnboarding = location.pathname === '/onboarding';
-  if (needsOnboarding && !onOnboarding) {
+  const onOnboardingExemptPath = ONBOARDING_EXEMPT_PATHS.includes(location.pathname);
+  if (needsOnboarding && !onOnboarding && !onOnboardingExemptPath) {
     return <Navigate to="/onboarding" replace />;
   }
   if (!needsOnboarding && onOnboarding) {

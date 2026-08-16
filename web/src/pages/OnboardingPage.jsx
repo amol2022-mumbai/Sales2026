@@ -9,6 +9,13 @@ import Badge from '../components/ui/Badge.jsx';
 
 const STEPS = ['Welcome', 'Company profile', 'Basic settings', 'Team & users'];
 
+const STEP_STORAGE_KEY = 'onboarding:step';
+
+function readInitialStep() {
+  const saved = Number(sessionStorage.getItem(STEP_STORAGE_KEY));
+  return Number.isInteger(saved) && saved >= 0 && saved < STEPS.length ? saved : 0;
+}
+
 const GETTING_STARTED = [
   'Complete your company profile and branding',
   'Choose your currency, timezone and brand colour',
@@ -27,10 +34,22 @@ const LICENSE_TONES = {
 export default function OnboardingPage() {
   const { user, tenant, refreshUser } = useAuth();
   const navigate = useNavigate();
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(readInitialStep);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+
+  // Persist the current step so returning to onboarding (e.g. after creating a
+  // sales team or inviting users) resumes where the user left off instead of
+  // restarting at the Welcome step. Clear the saved step once the tenant is
+  // onboarded so a future visit never shows a stale step.
+  useEffect(() => {
+    if (tenant?.onboardedAt) {
+      sessionStorage.removeItem(STEP_STORAGE_KEY);
+      return;
+    }
+    sessionStorage.setItem(STEP_STORAGE_KEY, String(step));
+  }, [step, tenant?.onboardedAt]);
 
   useEffect(() => {
     if (!tenant) return;

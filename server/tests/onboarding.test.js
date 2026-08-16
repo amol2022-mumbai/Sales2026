@@ -175,6 +175,31 @@ test('complete-setup is forbidden for another company', async () => {
   assert.equal(res.status, 403);
 });
 
+test('an un-onboarded business owner can access teams and users during onboarding', async () => {
+  const { request, db } = initTestApp();
+  createCompanyAndUser(db, {
+    companyName: 'Fresh Co',
+    email: 'fresh@onboard.test',
+    password: 'FreshPass123!',
+    roleKey: 'business_owner',
+  });
+  const token = await loginToken(request, 'fresh@onboard.test', 'FreshPass123!');
+
+  // The onboarding gate lives on the client: the backend must not block a
+  // business owner who has not completed setup from organising their sales
+  // team or inviting users. Regression guard for the "Create sales team" /
+  // "Invite users" actions on onboarding Step 4.
+  const teams = await request.get('/api/teams').set(auth(token));
+  assert.equal(teams.status, 200);
+
+  const users = await request.get('/api/users').set(auth(token));
+  assert.equal(users.status, 200);
+
+  const created = await request.post('/api/teams').set(auth(token)).send({ name: 'North Region' });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.data.name, 'North Region');
+});
+
 // ---------------------------------------------------------------------------
 // Tenant lifecycle resolution & actions
 // ---------------------------------------------------------------------------
