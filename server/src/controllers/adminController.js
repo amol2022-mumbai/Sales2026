@@ -611,6 +611,16 @@ export const generateAdminCredentials = asyncHandler(async (req, res) => {
   const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(req.params.id);
   if (!company) throw notFound('Client not found');
 
+  // Refuse to issue credentials for a tenant whose company-level status the auth
+  // middleware rejects (suspended/inactive): such credentials would be unusable
+  // and only deepen confusion. The Super Admin must reactivate first.
+  if (company.status === 'inactive') {
+    throw conflict('This client has been deactivated. Reactivate it before generating credentials.');
+  }
+  if (company.status === 'suspended') {
+    throw conflict('This client is suspended. Unsuspend it before generating credentials.');
+  }
+
   const { name, email } = req.body;
 
   const adminRole = db.prepare("SELECT id, key FROM roles WHERE key = 'business_owner'").get();

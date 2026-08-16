@@ -190,6 +190,41 @@ test('regenerating credentials resets password and keeps single-company isolatio
   assert.equal(crossCompany.status, 409);
 });
 
+test('generating credentials for a deactivated or suspended client is rejected', async () => {
+  const { request } = initTestApp();
+  const token = await loginToken(request, TEST_ADMIN.email, TEST_ADMIN.password);
+  const client = await createClient(request, token, 'LockedCo');
+
+  const deactivate = await request
+    .post(`/api/admin/clients/${client.id}/deactivate`)
+    .set('Authorization', `Bearer ${token}`);
+  assert.equal(deactivate.status, 200);
+
+  const creds = await generateCredentials(request, token, client.id, {
+    name: 'Admin One',
+    email: 'admin.one@lockedco.com',
+  });
+  assert.equal(creds.status, 409);
+  assert.ok(creds.body.error.message.includes('deactivated'));
+
+  const reactivate = await request
+    .post(`/api/admin/clients/${client.id}/activate`)
+    .set('Authorization', `Bearer ${token}`);
+  assert.equal(reactivate.status, 200);
+
+  const suspend = await request
+    .post(`/api/admin/clients/${client.id}/suspend`)
+    .set('Authorization', `Bearer ${token}`);
+  assert.equal(suspend.status, 200);
+
+  const credsSuspended = await generateCredentials(request, token, client.id, {
+    name: 'Admin One',
+    email: 'admin.one@lockedco.com',
+  });
+  assert.equal(credsSuspended.status, 409);
+  assert.ok(credsSuspended.body.error.message.includes('suspended'));
+});
+
 test('generate credentials is Super Admin only', async () => {
   const { request, db } = initTestApp();
   const token = await loginToken(request, TEST_ADMIN.email, TEST_ADMIN.password);
