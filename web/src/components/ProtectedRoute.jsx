@@ -19,13 +19,18 @@ export default function ProtectedRoute() {
   }
 
   // Forced password replacement: an account issued temporary credentials is
-  // locked into the change-password screen until it sets a new password.
+  // locked into the change-password screen until it sets a new password. This
+  // gate takes full priority and short-circuits the onboarding gate below, so a
+  // not-yet-onboarded admin is not bounced back and forth between the two.
   const needsPasswordChange = !user.isSuperAdmin && user.mustChangePassword;
   const onPasswordChange = location.pathname === '/change-password';
-  if (needsPasswordChange && !onPasswordChange) {
-    return <Navigate to="/change-password" replace />;
+  if (needsPasswordChange) {
+    if (!onPasswordChange) {
+      return <Navigate to="/change-password" replace />;
+    }
+    return <Outlet />;
   }
-  if (!needsPasswordChange && onPasswordChange) {
+  if (onPasswordChange) {
     return <Navigate to="/" replace />;
   }
 
