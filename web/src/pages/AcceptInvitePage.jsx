@@ -17,7 +17,11 @@ export default function AcceptInvitePage() {
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  if (!loading && user) return <Navigate to="/" replace />;
+  // Only bounce an already-authenticated user (e.g. the Super Admin previewing
+  // an invitation link) away when the link is missing its token. When a token
+  // is present, always show the set-password form so the invite can be
+  // completed regardless of the current session.
+  if (!loading && user && !token) return <Navigate to="/" replace />;
 
   async function handleSubmit(e) {
     e.preventDefault();

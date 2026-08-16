@@ -659,7 +659,14 @@ function ClientsTab() {
               <div className="flex justify-between gap-4">
                 <dt className="text-slate-500">Login URL</dt>
                 <dd className="break-all font-medium text-slate-800">
-                  {credResult.loginUrl.startsWith('/') ? `${window.location.origin}${credResult.loginUrl}` : credResult.loginUrl}
+                  <a
+                    href={credResult.loginUrl.startsWith('/') ? `${window.location.origin}${credResult.loginUrl}` : credResult.loginUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-brand-600 underline decoration-brand-300 hover:text-brand-700"
+                  >
+                    {credResult.loginUrl.startsWith('/') ? `${window.location.origin}${credResult.loginUrl}` : credResult.loginUrl}
+                  </a>
                 </dd>
               </div>
               <div className="flex justify-between gap-4">

@@ -19,16 +19,17 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   // `relogin=1` (used by the Super Admin "Generate Temporary Credentials" login
   // URL) forces the sign-in form to render even when a session already exists,
   // so a Company Admin can sign in fresh without being bounced to the current
-  // user's dashboard.
+  // user's dashboard. An optional `email` query param prefills the username so
+  // the Company Admin only enters the temporary password.
   const forceLogin = searchParams.get('relogin') != null;
+  const [email, setEmail] = useState(searchParams.get('email') || '');
+  const [password, setPassword] = useState('');
 
   if (!forceLogin && !loading && user) return <Navigate to="/" replace />;
 

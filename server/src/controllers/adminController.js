@@ -667,10 +667,13 @@ export const generateAdminCredentials = asyncHandler(async (req, res) => {
 
   // `relogin=1` forces the login screen to render even when a browser already
   // holds an authenticated session (e.g. the Super Admin previewing the link),
-  // so the Company Admin can always sign in fresh with these credentials.
+  // so the Company Admin can always sign in fresh with these credentials. The
+  // `email` is prefilled so the Company Admin only needs to enter the temporary
+  // password and is not mistaken for the platform Super Admin login.
+  const loginQuery = `relogin=1&email=${encodeURIComponent(email)}`;
   const loginUrl = env.appUrl
-    ? `${env.appUrl.replace(/\/+$/, '')}/login?relogin=1`
-    : '/login?relogin=1';
+    ? `${env.appUrl.replace(/\/+$/, '')}/login?${loginQuery}`
+    : `/login?${loginQuery}`;
 
   return ok(res, {
     company: company.name,
