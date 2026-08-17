@@ -91,6 +91,7 @@ export function companyToJson(c) {
     status: c.status,
     onboardedAt: c.onboarded_at || null,
     activatedAt: c.activated_at || null,
+    deletedAt: c.deleted_at || null,
     createdAt: c.created_at,
     updatedAt: c.updated_at,
   };
@@ -122,10 +123,16 @@ export function licenseToJson(l, companyId) {
 // ---------------------------------------------------------------------------
 export const listClients = asyncHandler(async (req, res) => {
   const db = getDb();
-  const { page, pageSize, search, status, lifecycle, licenseStatus, planId, sort, order } = req.query;
+  const { page, pageSize, search, status, lifecycle, licenseStatus, planId, sort, order, includeDeleted } = req.query;
 
   const where = [];
   const params = [];
+  // Soft-deleted tenants are hidden by default (they "disappear" from active
+  // client lists); the Super Admin can opt in with `includeDeleted` for
+  // recovery/audit.
+  if (!includeDeleted) {
+    where.push('deleted_at IS NULL');
+  }
   if (search) {
     where.push('(name LIKE ? OR email LIKE ? OR domain LIKE ?)');
     const like = `%${search}%`;
@@ -276,7 +283,7 @@ export const createClient = asyncHandler(async (req, res) => {
   const slug = slugify(name);
 
   if (req.body.domain) {
-    const existing = db.prepare('SELECT id FROM companies WHERE domain = ?').get(req.body.domain);
+    const existing = db.prepare('SELECT id FROM companies WHERE domain = ? AND deleted_at IS NULL').get(req.body.domain);
     if (existing) throw conflict('A client with this domain already exists');
   }
 
@@ -317,7 +324,7 @@ export const updateClient = asyncHandler(async (req, res) => {
   if (!company) throw notFound('Client not found');
 
   if (req.body.domain && req.body.domain !== company.domain) {
-    const existing = db.prepare('SELECT id FROM companies WHERE domain = ? AND id != ?').get(req.body.domain, company.id);
+    const existing = db.prepare('SELECT id FROM companies WHERE domain = ? AND id != ? AND deleted_at IS NULL').get(req.body.domain, company.id);
     if (existing) throw conflict('A client with this domain already exists');
   }
 
@@ -346,7 +353,7 @@ export const activateTenant = asyncHandler(async (req, res) => {
 
   const now = new Date().toISOString();
   db.prepare(
-    `UPDATE companies SET status = 'active', activated_at = COALESCE(activated_at, ?), updated_at = ? WHERE id = ?`
+    `UPDATE companies SET status = 'active', activated_at = COALESCE(activated_at, ?), deleted_at = NULL, updated_at = ? WHERE id = ?`
   ).run(now, now, company.id);
 
   // Un-suspend the license when the tenant was suspended at the license level.
@@ -383,6 +390,61 @@ export const deactivateTenant = asyncHandler(async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Tenant deletion (Super Admin only). Soft delete: the company row is marked
+// `deleted_at`. Deletion is deliberately independent of `status` and the
+// license: `deleted_at` alone drives access blocking (auth middleware + login)
+// and list/dashboard exclusion, while the company's prior `status` and its
+// license/subscription state are left untouched. Tenant data (users, teams,
+// customers, orders, subscriptions, audit trail) is preserved for
+// recovery/audit — nothing is physically removed and no foreign keys are
+// touched.
+// ---------------------------------------------------------------------------
+export const deleteTenant = asyncHandler(async (req, res) => {
+  const db = getDb();
+  const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(req.params.id);
+  if (!company) throw notFound('Client not found');
+
+  // Idempotent: deleting an already-deleted tenant is a no-op.
+  if (!company.deleted_at) {
+    const now = new Date().toISOString();
+    db.prepare('UPDATE companies SET deleted_at = ?, updated_at = ? WHERE id = ?').run(now, now, company.id);
+
+    req.audit?.('tenant.delete', {
+      entityType: 'company',
+      entityId: company.id,
+      metadata: { name: company.name },
+    });
+  }
+
+  const updated = db.prepare('SELECT * FROM companies WHERE id = ?').get(company.id);
+  return ok(res, companyToJson(updated));
+});
+
+// Restore clears only the deletion marker. It does NOT change `status` and does
+// NOT touch the license/subscription, so a company that was suspended, expired,
+// cancelled or otherwise non-active before deletion comes back in exactly the
+// same lifecycle/license state — the Super Admin must still act to reactivate
+// it if desired.
+export const restoreTenant = asyncHandler(async (req, res) => {
+  const db = getDb();
+  const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(req.params.id);
+  if (!company) throw notFound('Client not found');
+  if (!company.deleted_at) throw badRequest('Client is not deleted');
+
+  const now = new Date().toISOString();
+  db.prepare('UPDATE companies SET deleted_at = NULL, updated_at = ? WHERE id = ?').run(now, company.id);
+
+  req.audit?.('tenant.restore', {
+    entityType: 'company',
+    entityId: company.id,
+    metadata: { name: company.name },
+  });
+
+  const updated = db.prepare('SELECT * FROM companies WHERE id = ?').get(company.id);
+  return ok(res, companyToJson(updated));
+});
+
+// ---------------------------------------------------------------------------
 // Composite onboarding (Super Admin only). Creates a company, optionally
 // provisions its license (plan + trial/active status) and creates the Company
 // Admin as a pending user with a one-time invitation token — atomically, so the
@@ -395,7 +457,7 @@ export const onboardTenant = asyncHandler(async (req, res) => {
   const slug = slugify(name);
 
   if (req.body.domain) {
-    const existing = db.prepare('SELECT id FROM companies WHERE domain = ?').get(req.body.domain);
+    const existing = db.prepare('SELECT id FROM companies WHERE domain = ? AND deleted_at IS NULL').get(req.body.domain);
     if (existing) throw conflict('A client with this domain already exists');
   }
 
@@ -803,7 +865,7 @@ export const listLicenses = asyncHandler(async (_req, res) => {
     .prepare(
       `SELECT l.*, c.name AS company_name, p.name AS plan_name
        FROM licenses l
-       JOIN companies c ON c.id = l.company_id
+       JOIN companies c ON c.id = l.company_id AND c.deleted_at IS NULL
        LEFT JOIN plans p ON p.id = l.plan_id
        ORDER BY l.id`
     )
@@ -1009,13 +1071,13 @@ export const platformDashboard = asyncHandler(async (req, res) => {
   const companyId = req.query.companyId ? Number(req.query.companyId) : null;
 
   const companies = companyId
-    ? db.prepare('SELECT * FROM companies WHERE id = ?').all(companyId)
-    : db.prepare('SELECT * FROM companies ORDER BY id').all();
+    ? db.prepare('SELECT * FROM companies WHERE id = ? AND deleted_at IS NULL').all(companyId)
+    : db.prepare('SELECT * FROM companies WHERE deleted_at IS NULL ORDER BY id').all();
 
-  const totalCompanies = db.prepare('SELECT COUNT(*) AS c FROM companies').get().c;
-  const activeCompanies = db.prepare("SELECT COUNT(*) AS c FROM companies WHERE status = 'active'").get().c;
-  const inactiveCompanies = db.prepare("SELECT COUNT(*) AS c FROM companies WHERE status = 'inactive'").get().c;
-  const suspendedCompanies = db.prepare("SELECT COUNT(*) AS c FROM companies WHERE status = 'suspended'").get().c;
+  const totalCompanies = db.prepare('SELECT COUNT(*) AS c FROM companies WHERE deleted_at IS NULL').get().c;
+  const activeCompanies = db.prepare("SELECT COUNT(*) AS c FROM companies WHERE status = 'active' AND deleted_at IS NULL").get().c;
+  const inactiveCompanies = db.prepare("SELECT COUNT(*) AS c FROM companies WHERE status = 'inactive' AND deleted_at IS NULL").get().c;
+  const suspendedCompanies = db.prepare("SELECT COUNT(*) AS c FROM companies WHERE status = 'suspended' AND deleted_at IS NULL").get().c;
 
   const totalUsers = db.prepare("SELECT COUNT(*) AS c FROM users WHERE status != 'inactive'").get().c;
   const activeUsers = db.prepare("SELECT COUNT(*) AS c FROM users WHERE status = 'active'").get().c;
@@ -1066,7 +1128,7 @@ export const platformDashboard = asyncHandler(async (req, res) => {
   // Tenant growth: companies & users created per month (last 12 months).
   const growthMonths = monthsAgo(12);
   const companyGrowthRows = db
-    .prepare("SELECT strftime('%Y-%m', created_at) AS m, COUNT(*) AS c FROM companies GROUP BY m")
+    .prepare("SELECT strftime('%Y-%m', created_at) AS m, COUNT(*) AS c FROM companies WHERE deleted_at IS NULL GROUP BY m")
     .all();
   const userGrowthRows = db
     .prepare("SELECT strftime('%Y-%m', created_at) AS m, COUNT(*) AS c FROM users GROUP BY m")

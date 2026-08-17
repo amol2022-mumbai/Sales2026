@@ -101,10 +101,11 @@ export function runFollowUpReminders(db = getDb()) {
 
   const rows = db
     .prepare(
-      `SELECT id, company_id, assigned_to, created_by, activity_type, follow_up_date, follow_up_time,
-              contact_person, target_type, lead_id, customer_id
-       FROM follow_ups
-       WHERE deleted_at IS NULL AND status = 'Pending'`
+      `SELECT f.id, f.company_id, f.assigned_to, f.created_by, f.activity_type, f.follow_up_date, f.follow_up_time,
+              f.contact_person, f.target_type, f.lead_id, f.customer_id
+       FROM follow_ups f
+       JOIN companies c ON c.id = f.company_id
+       WHERE f.deleted_at IS NULL AND f.status = 'Pending' AND c.deleted_at IS NULL`
     )
     .all();
 

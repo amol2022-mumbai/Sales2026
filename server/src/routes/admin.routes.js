@@ -30,6 +30,8 @@ import {
   activateTenant,
   suspendTenant,
   deactivateTenant,
+  deleteTenant,
+  restoreTenant,
   listPlans,
   getPlan,
   createPlan,
@@ -84,6 +86,8 @@ router.post('/clients/:id/admin-credentials', validate(idParamSchema, 'params'),
 router.post('/clients/:id/activate', validate(idParamSchema, 'params'), activateTenant);
 router.post('/clients/:id/suspend', validate(idParamSchema, 'params'), suspendTenant);
 router.post('/clients/:id/deactivate', validate(idParamSchema, 'params'), deactivateTenant);
+router.post('/clients/:id/delete', validate(idParamSchema, 'params'), deleteTenant);
+router.post('/clients/:id/restore', validate(idParamSchema, 'params'), restoreTenant);
 router.get('/clients/:id/entitlements', validate(idParamSchema, 'params'), getClientEntitlements);
 router.get('/clients/:id/usage', validate(idParamSchema, 'params'), getClientUsage);
 

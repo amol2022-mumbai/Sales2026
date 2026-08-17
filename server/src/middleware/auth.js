@@ -52,6 +52,9 @@ function authenticateRequest(req, next, { assertLicense }) {
 
     const tenant = loadTenant(user);
     if (!user.isSuperAdmin) {
+      if (tenant?.company?.deleted_at) {
+        throw new HttpError(403, 'This account has been deleted. Please contact support.', { code: 'TENANT_DELETED' });
+      }
       if (tenant?.company?.status === 'suspended') {
         throw new HttpError(403, 'This account is suspended. Please contact support.', { code: 'TENANT_SUSPENDED' });
       }

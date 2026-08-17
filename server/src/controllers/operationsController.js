@@ -56,8 +56,10 @@ const FAILED_PAYMENT_EVENTS = ['invoice.payment_failed', 'payment_intent.payment
  * derived license + lifecycle state. Returns { companies, byCompany } where
  * byCompany maps company id -> { company, license, plan, resolved, lifecycle }.
  */
-function loadTenantStates(db) {
-  const companies = db.prepare('SELECT * FROM companies ORDER BY id').all();
+function loadTenantStates(db, { includeDeleted = false } = {}) {
+  const companies = includeDeleted
+    ? db.prepare('SELECT * FROM companies ORDER BY id').all()
+    : db.prepare('SELECT * FROM companies WHERE deleted_at IS NULL ORDER BY id').all();
   const licenseByCompany = new Map(
     db.prepare('SELECT * FROM licenses').all().map((l) => [l.company_id, l])
   );
@@ -151,7 +153,7 @@ export const operationsOverview = asyncHandler(async (req, res) => {
     .get().c;
 
   // New tenants in the last 30 days.
-  const newTenants30d = db.prepare('SELECT COUNT(*) AS c FROM companies WHERE created_at >= ?').get(daysAgo(30)).c;
+  const newTenants30d = db.prepare('SELECT COUNT(*) AS c FROM companies WHERE created_at >= ? AND deleted_at IS NULL').get(daysAgo(30)).c;
 
   // Trial conversion: paying (active) tenants vs current trials.
   const trials = licenses.trial;
@@ -265,7 +267,7 @@ export const getClientOverview = asyncHandler(async (req, res) => {
   const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(companyId);
   if (!company) throw notFound('Client not found');
 
-  const { byCompany } = loadTenantStates(db);
+  const { byCompany } = loadTenantStates(db, { includeDeleted: true });
   const state = byCompany.get(company.id);
   const { license, plan, resolved, lifecycle } = state;
 

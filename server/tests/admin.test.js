@@ -397,3 +397,171 @@ test('updating a role with unknown permission keys is rejected', async () => {
     .send({ permissionKeys: ['dashboard:view', 'nonsense:fly'] });
   assert.equal(res.status, 400);
 });
+
+// ---------------------------------------------------------------------------
+// Tenant soft deletion (Super Admin only)
+// ---------------------------------------------------------------------------
+
+test('super admin can soft-delete a tenant and its users cannot log in', async () => {
+  const { request, db } = initTestApp();
+  const { companyId } = createCompanyAndUser(db, {
+    companyName: 'Delete Me Inc',
+    email: 'del@d.test',
+    password: 'DelPass123!',
+    roleKey: 'business_owner',
+  });
+  const admin = await loginToken(request, 'admin@test.com', 'AdminPass123!');
+
+  const del = await request.post(`/api/admin/clients/${companyId}/delete`).set(auth(admin));
+  assert.equal(del.status, 200);
+  assert.ok(del.body.data.deletedAt);
+  // Deletion does not mutate the company's lifecycle status.
+  assert.equal(del.body.data.status, 'active');
+
+  // Soft-deleted tenants disappear from the default active client list.
+  const list = await request.get('/api/admin/clients').set(auth(admin));
+  assert.equal(list.status, 200);
+  assert.ok(!list.body.data.some((c) => c.id === companyId));
+
+  // ...but remain visible for recovery/audit when explicitly requested.
+  const listDeleted = await request.get('/api/admin/clients?includeDeleted=true').set(auth(admin));
+  const found = listDeleted.body.data.find((c) => c.id === companyId);
+  assert.ok(found);
+  assert.ok(found.deletedAt);
+
+  // Deleted company users are blocked at login.
+  const blockedLogin = await request.post('/api/auth/login').send({ email: 'del@d.test', password: 'DelPass123!' });
+  assert.equal(blockedLogin.status, 401);
+
+  // Restore re-enables the tenant and its users.
+  const restore = await request.post(`/api/admin/clients/${companyId}/restore`).set(auth(admin));
+  assert.equal(restore.status, 200);
+  assert.equal(restore.body.data.deletedAt, null);
+  assert.equal(restore.body.data.status, 'active');
+  const okLogin = await request.post('/api/auth/login').send({ email: 'del@d.test', password: 'DelPass123!' });
+  assert.equal(okLogin.status, 200);
+});
+
+test('deleting a tenant does not affect other tenants', async () => {
+  const { request, db, seed } = initTestApp();
+  const { companyId } = createCompanyAndUser(db, {
+    companyName: 'Doomed Inc',
+    email: 'doomed@d.test',
+    password: 'DoomedPass123!',
+    roleKey: 'business_owner',
+  });
+  const admin = await loginToken(request, 'admin@test.com', 'AdminPass123!');
+
+  await request.post(`/api/admin/clients/${companyId}/delete`).set(auth(admin));
+
+  // Seed company remains in the active list and its users can still log in.
+  const list = await request.get('/api/admin/clients').set(auth(admin));
+  assert.ok(list.body.data.some((c) => c.id === seed.companyId));
+
+  const seedAdmin = createUserInCompany(db, seed.companyId, { name: 'Still Here', email: 'still@a.test', password: 'StillPass123!', roleKey: 'business_owner' });
+  const login = await request.post('/api/auth/login').send({ email: 'still@a.test', password: 'StillPass123!' });
+  assert.equal(login.status, 200);
+});
+
+test('company admin and tenant users cannot delete a tenant', async () => {
+  const { request, tokens, db } = await setupHierarchy();
+  const seedCompanyId = db.prepare('SELECT id FROM companies ORDER BY id LIMIT 1').get().id;
+
+  // business_owner (tenant admin) is forbidden from the Super Admin surface.
+  const byOwner = await request.post(`/api/admin/clients/${seedCompanyId}/delete`).set(auth(tokens.owner));
+  assert.equal(byOwner.status, 403);
+
+  // A regular tenant user is likewise forbidden.
+  const byExec = await request.post(`/api/admin/clients/${seedCompanyId}/delete`).set(auth(tokens.exec1));
+  assert.equal(byExec.status, 403);
+
+  // The seed company is untouched.
+  const row = db.prepare('SELECT deleted_at FROM companies WHERE id = ?').get(seedCompanyId);
+  assert.equal(row.deleted_at, null);
+});
+
+test('deleted tenants are excluded from the platform dashboard', async () => {
+  const { request, db } = initTestApp();
+  const { companyId } = createCompanyAndUser(db, {
+    companyName: 'Ghost Inc',
+    email: 'ghost@g.test',
+    password: 'GhostPass123!',
+    roleKey: 'business_owner',
+  });
+  const admin = await loginToken(request, 'admin@test.com', 'AdminPass123!');
+
+  const before = await request.get('/api/admin/dashboard').set(auth(admin));
+  const beforeTotal = before.body.data.totals.companies;
+
+  await request.post(`/api/admin/clients/${companyId}/delete`).set(auth(admin));
+
+  const after = await request.get('/api/admin/dashboard').set(auth(admin));
+  assert.equal(after.body.data.totals.companies, beforeTotal - 1);
+});
+
+test('deleting an already-deleted tenant is idempotent', async () => {
+  const { request, db } = initTestApp();
+  const { companyId } = createCompanyAndUser(db, {
+    companyName: 'Twice Inc',
+    email: 'twice@t.test',
+    password: 'TwicePass123!',
+    roleKey: 'business_owner',
+  });
+  const admin = await loginToken(request, 'admin@test.com', 'AdminPass123!');
+
+  await request.post(`/api/admin/clients/${companyId}/delete`).set(auth(admin));
+  const again = await request.post(`/api/admin/clients/${companyId}/delete`).set(auth(admin));
+  assert.equal(again.status, 200);
+
+  const row = db.prepare('SELECT deleted_at FROM companies WHERE id = ?').get(companyId);
+  assert.ok(row.deleted_at);
+});
+
+test('restore does not reactivate a suspended company', async () => {
+  const { request, db } = initTestApp();
+  const { companyId } = createCompanyAndUser(db, {
+    companyName: 'Suspended Inc',
+    email: 'susp@s.test',
+    password: 'SuspPass123!',
+    roleKey: 'business_owner',
+  });
+  const admin = await loginToken(request, 'admin@test.com', 'AdminPass123!');
+
+  // Suspend the company, then delete it.
+  const suspend = await request.post(`/api/admin/clients/${companyId}/suspend`).set(auth(admin));
+  assert.equal(suspend.status, 200);
+  assert.equal(suspend.body.data.status, 'suspended');
+
+  await request.post(`/api/admin/clients/${companyId}/delete`).set(auth(admin));
+
+  const restore = await request.post(`/api/admin/clients/${companyId}/restore`).set(auth(admin));
+  assert.equal(restore.status, 200);
+  assert.equal(restore.body.data.deletedAt, null);
+  // Restore only clears the deletion marker; the suspension is preserved.
+  assert.equal(restore.body.data.status, 'suspended');
+
+  // The tenant remains blocked for its users after restore.
+  const login = await request.post('/api/auth/login').send({ email: 'susp@s.test', password: 'SuspPass123!' });
+  assert.equal(login.status, 200);
+  const me = await request.get('/api/auth/me').set(auth(login.body.data.token));
+  assert.equal(me.status, 403);
+});
+
+test('restore preserves a suspended license', async () => {
+  const { request, db } = initTestApp();
+  const { companyId } = createCompanyAndUser(db, {
+    companyName: 'Suspended License Inc',
+    email: 'lic@l.test',
+    password: 'LicPass123!',
+    roleKey: 'business_owner',
+  });
+  db.prepare("INSERT INTO licenses (company_id, status) VALUES (?, 'suspended')").run(companyId);
+  const admin = await loginToken(request, 'admin@test.com', 'AdminPass123!');
+
+  await request.post(`/api/admin/clients/${companyId}/delete`).set(auth(admin));
+  const restore = await request.post(`/api/admin/clients/${companyId}/restore`).set(auth(admin));
+  assert.equal(restore.status, 200);
+
+  const lic = db.prepare('SELECT status FROM licenses WHERE company_id = ?').get(companyId);
+  assert.equal(lic.status, 'suspended');
+});

@@ -32,12 +32,17 @@ CREATE TABLE IF NOT EXISTS companies (
   status        TEXT    NOT NULL DEFAULT 'active' CHECK (status IN ('active','inactive','suspended')),
   onboarded_at  TEXT,
   activated_at  TEXT,
+  -- Soft-delete marker. A non-NULL value means the tenant has been deleted by
+  -- the Super Admin: it is hidden from active lists, its users are blocked from
+  -- logging in / accessing the API, and its data is preserved for recovery.
+  deleted_at    TEXT,
   created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_companies_slug ON companies(slug);
 CREATE INDEX IF NOT EXISTS idx_companies_status ON companies(status);
+CREATE INDEX IF NOT EXISTS idx_companies_deleted ON companies(deleted_at);
 -- idx_companies_domain is created in migrate.js after the incremental
 -- `domain` column migration (it does not exist on legacy databases yet).
 

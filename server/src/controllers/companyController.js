@@ -44,9 +44,9 @@ export const listCompanies = asyncHandler(async (req, res) => {
   const { page, pageSize } = req.query;
 
   if (req.user.isSuperAdmin) {
-    const total = db.prepare('SELECT COUNT(*) AS c FROM companies').get().c;
+    const total = db.prepare('SELECT COUNT(*) AS c FROM companies WHERE deleted_at IS NULL').get().c;
     const rows = db
-      .prepare('SELECT * FROM companies ORDER BY id LIMIT ? OFFSET ?')
+      .prepare('SELECT * FROM companies WHERE deleted_at IS NULL ORDER BY id LIMIT ? OFFSET ?')
       .all(pageSize, (page - 1) * pageSize);
     return paginated(res, rows.map(companyToJson), { page, pageSize, total });
   }

@@ -123,7 +123,7 @@ function subscriptionToJson(db, company) {
 // ---------------------------------------------------------------------------
 export const listSubscriptions = asyncHandler(async (_req, res) => {
   const db = getDb();
-  const companies = db.prepare('SELECT * FROM companies ORDER BY id').all();
+  const companies = db.prepare('SELECT * FROM companies WHERE deleted_at IS NULL ORDER BY id').all();
   return ok(res, companies.map((c) => subscriptionToJson(db, c)));
 });
 

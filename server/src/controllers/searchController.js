@@ -48,7 +48,7 @@ export const search = asyncHandler(async (req, res) => {
   if (scope === 'all' || scope === 'companies') {
     if (req.user.isSuperAdmin) {
       results.companies = db
-        .prepare('SELECT id, name, slug, status FROM companies WHERE name LIKE ? OR slug LIKE ? ORDER BY name LIMIT ?')
+        .prepare('SELECT id, name, slug, status FROM companies WHERE deleted_at IS NULL AND (name LIKE ? OR slug LIKE ?) ORDER BY name LIMIT ?')
         .all(pattern, pattern, GROUP_LIMIT);
     }
   }

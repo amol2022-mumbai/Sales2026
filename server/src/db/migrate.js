@@ -95,6 +95,10 @@ export function applyIncrementalMigrations(db) {
   ensureColumn(db, 'companies', 'onboarded_at', 'TEXT');
   ensureColumn(db, 'companies', 'activated_at', 'TEXT');
 
+  // Soft delete (Phase 23): a deleted_at marker lets the Super Admin remove a
+  // tenant without physically destroying its data (recoverable, auditable).
+  ensureColumn(db, 'companies', 'deleted_at', 'TEXT');
+
   // Plans & entitlements (Phase 13): plan-level entitlements and per-license
   // overrides. The licenses table CHECK is expanded via a rebuild below.
   ensureColumn(db, 'plans', 'storage_limit_mb', 'INTEGER NOT NULL DEFAULT -1');
@@ -126,6 +130,7 @@ export function applyIncrementalMigrations(db) {
     CREATE INDEX IF NOT EXISTS idx_users_manager ON users(manager_id);
     CREATE INDEX IF NOT EXISTS idx_users_employee ON users(employee_id);
     CREATE INDEX IF NOT EXISTS idx_companies_domain ON companies(domain);
+    CREATE INDEX IF NOT EXISTS idx_companies_deleted ON companies(deleted_at);
     CREATE INDEX IF NOT EXISTS idx_users_invitation ON users(invitation_token);
   `);
 }

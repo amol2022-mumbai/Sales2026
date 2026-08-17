@@ -74,6 +74,16 @@ export const login = asyncHandler(async (req, res) => {
 
   const user = getUserContext(row.id);
 
+  // Soft-deleted companies cannot authenticate: their users are blocked at
+  // login, independent of the per-request tenant enforcement.
+  if (user.companyId) {
+    const company = db.prepare('SELECT deleted_at FROM companies WHERE id = ?').get(user.companyId);
+    if (company?.deleted_at) {
+      req.audit?.('auth.login_failed', { entityType: 'user', entityId: user.id, companyId: user.companyId, metadata: { email: user.email, reason: 'deleted_company' } });
+      throw unauthorized('This account has been deleted. Please contact support.');
+    }
+  }
+
   req.audit?.('auth.login', { entityType: 'user', entityId: user.id, companyId: user.companyId ?? null, metadata: { email: user.email } });
 
   const token = signToken({ sub: user.id });

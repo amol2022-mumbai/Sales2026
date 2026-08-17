@@ -884,10 +884,11 @@ export const listClientsQuerySchema = paginationQuerySchema.extend({
   search: z.string().trim().max(100).optional(),
   status: z.enum(['active', 'inactive', 'suspended']).optional(),
   lifecycle: z
-    .enum(['pending', 'trial', 'active', 'expiring', 'past_due', 'expired', 'suspended', 'cancelled', 'deactivated'])
+    .enum(['pending', 'trial', 'active', 'expiring', 'past_due', 'expired', 'suspended', 'cancelled', 'deactivated', 'deleted'])
     .optional(),
   licenseStatus: z.enum(licenseStatuses).optional(),
   planId: z.coerce.number().int().positive().optional(),
+  includeDeleted: z.coerce.boolean().optional(),
   sort: z.enum(['name', 'createdAt', 'userCount', 'licenseExpiresAt', 'status']).optional(),
   order: z.enum(['asc', 'desc']).optional(),
 });

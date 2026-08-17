@@ -29,6 +29,7 @@ export const TENANT_LIFECYCLE_STATUSES = [
   'suspended',
   'cancelled',
   'deactivated',
+  'deleted',
 ];
 
 // Number of days before expiry at which an active/trial license is reported as
@@ -244,7 +245,8 @@ export function resolveTenantLifecycle(db, companyId) {
   const resolved = resolveLicense(db, companyId);
 
   let lifecycle;
-  if (company.status === 'suspended') lifecycle = 'suspended';
+  if (company.deleted_at) lifecycle = 'deleted';
+  else if (company.status === 'suspended') lifecycle = 'suspended';
   else if (company.status === 'inactive') lifecycle = 'deactivated';
   else if (!resolved.license) lifecycle = 'pending';
   else lifecycle = resolved.status;
@@ -257,6 +259,7 @@ export function resolveTenantLifecycle(db, companyId) {
  * company + resolved license are already in hand to avoid an extra query).
  */
 export function lifecycleFromTenant(company, resolved) {
+  if (company.deleted_at) return 'deleted';
   if (company.status === 'suspended') return 'suspended';
   if (company.status === 'inactive') return 'deactivated';
   if (!resolved.license) return 'pending';
@@ -268,6 +271,9 @@ export function lifecycleFromTenant(company, resolved) {
  */
 export function assertLicenseActive(tenant) {
   if (!tenant) return;
+  if (tenant.company?.deleted_at) {
+    throw new HttpError(403, 'This account has been deleted. Please contact support.', { code: 'TENANT_DELETED' });
+  }
   if (tenant.company?.status === 'suspended') {
     throw new HttpError(403, 'This account is suspended. Please contact support.', { code: 'TENANT_SUSPENDED' });
   }

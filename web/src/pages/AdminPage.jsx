@@ -255,9 +255,13 @@ function ClientsTab() {
   const [search, setSearch] = useState('');
   const [lifecycle, setLifecycle] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [includeDeleted, setIncludeDeleted] = useState(false);
   const [overview, setOverview] = useState(null);
   const [overviewData, setOverviewData] = useState(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteName, setDeleteName] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -267,6 +271,7 @@ function ClientsTab() {
       if (search) params.search = search;
       if (lifecycle) params.lifecycle = lifecycle;
       if (statusFilter) params.status = statusFilter;
+      if (includeDeleted) params.includeDeleted = true;
       params.sort = 'name';
       params.order = 'asc';
       const res = await adminApi.clients.list(params);
@@ -276,7 +281,7 @@ function ClientsTab() {
     } finally {
       setLoading(false);
     }
-  }, [search, lifecycle, statusFilter]);
+  }, [search, lifecycle, statusFilter, includeDeleted]);
 
   useEffect(() => {
     load();
@@ -441,6 +446,32 @@ function ClientsTab() {
     }
   }
 
+  function openDelete(c) {
+    setDeleteTarget(c);
+    setDeleteName('');
+    setError(null);
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    if (deleteName !== deleteTarget.name) {
+      setError(`Type the exact client name "${deleteTarget.name}" to confirm deletion.`);
+      return;
+    }
+    setDeleting(true);
+    setError(null);
+    try {
+      await adminApi.clients.delete(deleteTarget.id);
+      setDeleteTarget(null);
+      setDeleteName('');
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   const update = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const updateInvite = (k) => (e) => setInviteForm((f) => ({ ...f, [k]: e.target.value }));
   const updateCred = (k) => (e) => setCredForm((f) => ({ ...f, [k]: e.target.value }));
@@ -477,7 +508,7 @@ function ClientsTab() {
         />
         <select className="input w-40" value={lifecycle} onChange={(e) => setLifecycle(e.target.value)}>
           <option value="">All lifecycles</option>
-          {['pending', 'trial', 'active', 'expiring', 'expired', 'suspended', 'cancelled', 'deactivated'].map((s) => (
+          {['pending', 'trial', 'active', 'expiring', 'expired', 'suspended', 'cancelled', 'deactivated', 'deleted'].map((s) => (
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
@@ -487,6 +518,15 @@ function ClientsTab() {
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
+        <label className="ml-1 inline-flex items-center gap-2 text-sm text-slate-600">
+          <input
+            type="checkbox"
+            className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+            checked={includeDeleted}
+            onChange={(e) => setIncludeDeleted(e.target.checked)}
+          />
+          Show deleted
+        </label>
       </div>
 
       {error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
@@ -518,22 +558,31 @@ function ClientsTab() {
                 <td className="px-4 py-3">{statusBadge(c.licenseStatus || c.license?.status || 'active')}</td>
                 <td className="px-4 py-3 text-slate-600">{c.userCount ?? 0}</td>
                 <td className="px-4 py-3 text-right">
-                  {c.status !== 'active' && (
+                  {!c.deletedAt && c.status !== 'active' && (
                     <button type="button" className="text-sm font-medium text-emerald-600 hover:text-emerald-700" disabled={actingId === c.id} onClick={() => lifecycleAction(c, 'activate')}>
                       Activate
                     </button>
                   )}
-                  {c.status === 'active' && (
+                  {!c.deletedAt && c.status === 'active' && (
                     <button type="button" className="text-sm font-medium text-amber-600 hover:text-amber-700" disabled={actingId === c.id} onClick={() => lifecycleAction(c, 'suspend')}>
                       Suspend
                     </button>
                   )}
-                  {c.status !== 'inactive' && (
+                  {!c.deletedAt && c.status !== 'inactive' && (
                     <button type="button" className="ml-3 text-sm font-medium text-slate-500 hover:text-slate-700" disabled={actingId === c.id} onClick={() => lifecycleAction(c, 'deactivate')}>
                       Deactivate
                     </button>
                   )}
-                  <button type="button" className="text-sm font-medium text-brand-600 hover:text-brand-700" onClick={() => openOverview(c)}>
+                  {c.deletedAt ? (
+                    <button type="button" className="text-sm font-medium text-emerald-600 hover:text-emerald-700" disabled={actingId === c.id} onClick={() => lifecycleAction(c, 'restore')}>
+                      Restore
+                    </button>
+                  ) : (
+                    <button type="button" className="text-sm font-medium text-rose-600 hover:text-rose-700" disabled={actingId === c.id} onClick={() => openDelete(c)}>
+                      Delete
+                    </button>
+                  )}
+                  <button type="button" className="ml-3 text-sm font-medium text-brand-600 hover:text-brand-700" onClick={() => openOverview(c)}>
                     View
                   </button>
                   <button type="button" className="ml-3 text-sm font-medium text-brand-600 hover:text-brand-700" onClick={() => openInvite(c)}>
@@ -789,6 +838,39 @@ function ClientsTab() {
             </div>
           </div>
         )}
+      </Modal>
+
+      <Modal open={!!deleteTarget} title={`Delete client — ${deleteTarget?.name || ''}`} onClose={() => setDeleteTarget(null)}>
+        <div className="space-y-4">
+          <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            This is a destructive action. Deleting this tenant will:
+            <ul className="mt-2 list-disc pl-5">
+              <li>Immediately block all users from logging in and using the API.</li>
+              <li>Remove the tenant from all active client lists and dashboards.</li>
+              <li>Preserve the tenant's data (users, customers, orders, subscriptions, audit trail) for recovery and audit.</li>
+            </ul>
+          </div>
+          <div>
+            <label className="label">Type the client name to confirm</label>
+            <input
+              className="input"
+              placeholder={deleteTarget?.name || ''}
+              value={deleteName}
+              onChange={(e) => setDeleteName(e.target.value)}
+            />
+          </div>
+          <div className="flex justify-end gap-3">
+            <button type="button" className="btn-secondary" onClick={() => setDeleteTarget(null)}>Cancel</button>
+            <button
+              type="button"
+              className="btn-danger"
+              disabled={deleting || deleteName !== deleteTarget?.name}
+              onClick={confirmDelete}
+            >
+              {deleting ? <Spinner className="h-4 w-4" /> : 'Delete tenant'}
+            </button>
+          </div>
+        </div>
       </Modal>
 
       <Modal open={!!overview} title={`Tenant overview — ${overview?.name || ''}`} onClose={() => setOverview(null)} wide>

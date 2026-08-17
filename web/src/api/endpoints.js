@@ -22,6 +22,8 @@ export const adminApi = {
     activate: (id) => apiFetch(`/admin/clients/${id}/activate`, { method: 'POST' }),
     suspend: (id) => apiFetch(`/admin/clients/${id}/suspend`, { method: 'POST' }),
     deactivate: (id) => apiFetch(`/admin/clients/${id}/deactivate`, { method: 'POST' }),
+    delete: (id) => apiFetch(`/admin/clients/${id}/delete`, { method: 'POST' }),
+    restore: (id) => apiFetch(`/admin/clients/${id}/restore`, { method: 'POST' }),
   },
   plans: {
     list: () => apiFetch('/admin/plans'),

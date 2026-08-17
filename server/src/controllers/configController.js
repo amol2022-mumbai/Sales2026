@@ -45,12 +45,12 @@ export const publicConfig = asyncHandler(async (req, res) => {
   if (!company) {
     const host = (req.get('host') || '').replace(/:\d+$/, '');
     if (host) {
-      company = db.prepare('SELECT * FROM companies WHERE domain = ?').get(host) || null;
+      company = db.prepare('SELECT * FROM companies WHERE domain = ? AND deleted_at IS NULL').get(host) || null;
     }
   }
 
   if (!company) {
-    company = db.prepare("SELECT * FROM companies WHERE status = 'active' ORDER BY id LIMIT 1").get() || null;
+    company = db.prepare("SELECT * FROM companies WHERE status = 'active' AND deleted_at IS NULL ORDER BY id LIMIT 1").get() || null;
   }
 
   let tenant = null;
