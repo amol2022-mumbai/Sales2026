@@ -32,7 +32,7 @@ committed or web-accessible.
 | `API_BASE_URL` | yes | Public base URL (used for links and fallback origin). |
 | `CORS_ORIGINS` | yes | Comma-separated allow-list of frontend origins. |
 | `TRUST_PROXY` | — | `1` behind a single reverse proxy; `0` otherwise. Used for rate-limit IP detection. |
-| `DB_PATH` | yes | SQLite file path, relative to `server/`. |
+| `DB_PATH` | yes | SQLite file path, relative to `server/` (default `./data/crm.db`). Keep it outside the web root; the server creates the data directory as `0700` and the DB file as `0600` on startup. |
 | `JWT_SECRET` | **yes** | Strong random secret. `openssl rand -hex 48`. Boot refuses to start if missing/placeholder. |
 | `JWT_EXPIRES_IN` | — | Token lifetime (default `8h`). |
 | `SEED_ADMIN_NAME` | — | Super admin display name. |
@@ -40,7 +40,7 @@ committed or web-accessible.
 | `SEED_ADMIN_PASSWORD` | **yes** | One-time bootstrap password. Boot refuses to start in production if still `ChangeMe123!`. |
 | `SEED_COMPANY_NAME` | — | Name of the seed client. |
 | `APP_NAME` / `APP_BRAND_COLOR` / `APP_LOGO_URL` / `APP_FAVICON_URL` | — | Fallback white-label branding. |
-| `APP_URL` | — | Public app base URL used to build absolute links in emails (e.g. the company-admin invitation). Empty = relative `/accept-invite` links. |
+| `APP_URL` | — | Public app base URL used to build absolute links in emails (e.g. the company-admin invitation). Empty = relative `/accept-invite` links. Invitation tokens are always carried in the URL fragment (`#token=...`), never the query string. |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | — | Outbound SMTP for invitation emails. When `SMTP_HOST`/`SMTP_FROM` are empty, email is disabled and the invitation link is returned in the API response for manual sharing. |
 | `AI_PROVIDER` / `AI_API_KEY` / `AI_MODEL` / `AI_BASE_URL` / `AI_TIMEOUT_MS` | — | Optional. Blank = deterministic offline assistant. Secrets are server-side only. |
 | `PAYMENT_PROVIDER` | — | Provider id (default `stripe`). |
@@ -51,11 +51,16 @@ committed or web-accessible.
 
 **Secrets handling rules**
 
+- The server loads `.env` from the **repository root** (next to the root
+  `package.json`), independent of the process working directory. A `server/.env`
+  file is **not** consulted; do not put production values there.
 - Secrets are read server-side only and are never returned by `/api/config` or
   any public endpoint.
 - The AI and payment secrets are never bundled into the frontend build.
 - Production logging (morgan `combined`) logs request line, status and latency —
-  it never logs request bodies or authorization headers.
+  it never logs request bodies or authorization headers. Invitation tokens are
+  never logged because they travel in the URL fragment, which browsers do not
+  send to the server.
 
 ---
 

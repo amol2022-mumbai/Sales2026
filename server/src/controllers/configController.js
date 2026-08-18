@@ -61,6 +61,20 @@ export const publicConfig = asyncHandler(async (req, res) => {
 
   const payload = tenant ? buildTenantPayload(tenant) : null;
 
+  // Anonymous callers receive branding only. Never expose tenant contact PII,
+  // address details, license/subscription state or user limits via this public
+  // endpoint. (Authenticated tenants still get the full payload from login/me.)
+  const branding = payload
+    ? {
+        companyId: payload.companyId,
+        name: payload.name,
+        domain: payload.domain,
+        logoUrl: payload.logoUrl,
+        faviconUrl: payload.faviconUrl,
+        brandColor: payload.brandColor,
+      }
+    : null;
+
   return ok(res, {
     appName: env.appName,
     name: payload?.name ?? env.appName,
@@ -68,6 +82,6 @@ export const publicConfig = asyncHandler(async (req, res) => {
     logoUrl: payload?.logoUrl ?? (env.appLogoUrl || null),
     faviconUrl: payload?.faviconUrl ?? (env.appFaviconUrl || null),
     brandColor: payload?.brandColor ?? env.appBrandColor,
-    company: payload,
+    company: branding,
   });
 });

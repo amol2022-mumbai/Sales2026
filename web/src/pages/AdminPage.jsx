@@ -671,7 +671,7 @@ function ClientsTab() {
                   Email is not configured — share this link with {inviteResult.email}:
                 </p>
               )}
-              <code className="mt-1 block break-all rounded bg-white px-2 py-1 text-xs">{window.location.origin}/accept-invite?token={inviteResult.invitationToken}</code>
+              <code className="mt-1 block break-all rounded bg-white px-2 py-1 text-xs">{window.location.origin}/accept-invite#token={inviteResult.invitationToken}</code>
             </div>
           )}
         </div>
@@ -773,7 +773,7 @@ function ClientsTab() {
                     Email is not configured — share this link with {onboardResult.invitation.email}:
                   </p>
                 )}
-                <code className="mt-1 block break-all rounded bg-white px-2 py-1 text-xs">{window.location.origin}/accept-invite?token={onboardResult.invitation.invitationToken}</code>
+                <code className="mt-1 block break-all rounded bg-white px-2 py-1 text-xs">{window.location.origin}/accept-invite#token={onboardResult.invitation.invitationToken}</code>
               </div>
             )}
             <div className="flex justify-end gap-3">

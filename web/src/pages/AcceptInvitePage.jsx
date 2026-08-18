@@ -1,18 +1,32 @@
-import { useState } from 'react';
-import { useNavigate, useSearchParams, Navigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { TrendingUp } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useBranding } from '../context/BrandContext.jsx';
 import Logo from '../components/ui/Logo.jsx';
 import Spinner from '../components/ui/Spinner.jsx';
 
+// The invitation token is carried in the URL fragment (`#token=...`), which is
+// never sent to the server or written to access logs.
+function readInviteToken() {
+  const match = window.location.hash.match(/[#&]token=([^&]+)/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
 export default function AcceptInvitePage() {
   const { user, loading, acceptInvite } = useAuth();
   const { branding } = useBranding();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const token = searchParams.get('token') || '';
+  const [token] = useState(readInviteToken);
   const [password, setPassword] = useState('');
+
+  // Remove the token from the address bar once captured so it does not linger
+  // in browser history.
+  useEffect(() => {
+    if (window.location.hash) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }, []);
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);

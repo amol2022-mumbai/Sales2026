@@ -13,6 +13,8 @@ server/dist/
 .env
 .env.local
 .env.*.local
+.env.sales
+.env.production
 
 # Database files (local runtime data)
 *.db
@@ -21,6 +23,8 @@ server/dist/
 *.sqlite
 *.sqlite3
 server/data/
+# Legacy database location (previously resolved to server/src/data/)
+server/src/data/
 
 # Logs
 *.log

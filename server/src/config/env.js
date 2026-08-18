@@ -1,9 +1,25 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const serverRoot = path.resolve(__dirname, '..');
+// Server package root (server/), containing src/, tests/ and scripts/.
+export const serverPackageRoot = path.resolve(__dirname, '..', '..');
+// Repository root (contains server/ and web/). The canonical production .env
+// lives here, next to the root package.json.
+export const repoRoot = path.resolve(serverPackageRoot, '..');
+
+// Resolve the .env file deterministically from the source tree, never from the
+// process working directory. npm workspace scripts run with cwd set to the
+// workspace (server/), so a cwd-relative lookup would load server/.env
+// (development defaults) instead of the production .env at the repository root.
+// DOTENV_CONFIG_PATH remains available as an explicit override for operators.
+export function resolveDotenvPath() {
+  if (process.env.DOTENV_CONFIG_PATH) return path.resolve(process.env.DOTENV_CONFIG_PATH);
+  return path.join(repoRoot, '.env');
+}
+
+dotenv.config({ path: resolveDotenvPath() });
 
 function toInt(value, fallback) {
   const n = Number.parseInt(value, 10);
@@ -29,7 +45,7 @@ export const env = {
   dbPath:
     process.env.DB_PATH === ':memory:'
       ? ':memory:'
-      : path.resolve(serverRoot, process.env.DB_PATH || './data/crm.db'),
+      : path.resolve(serverPackageRoot, process.env.DB_PATH || './data/crm.db'),
   jwtSecret: process.env.JWT_SECRET || '',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '8h',
   seedAdminName: process.env.SEED_ADMIN_NAME || 'Super Admin',

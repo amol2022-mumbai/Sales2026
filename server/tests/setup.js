@@ -9,3 +9,6 @@ process.env.SEED_COMPANY_NAME = 'Test Company';
 process.env.CORS_ORIGINS = 'http://localhost:5173';
 process.env.PAYMENT_MOCK = '1';
 process.env.PAYMENT_WEBHOOK_SECRET = 'test-webhook-secret-for-unit-tests';
+// Keep the test environment hermetic regardless of any repository .env:
+// APP_URL must be unset so invitation/login links are relative.
+process.env.APP_URL = '';

@@ -5,18 +5,22 @@ import { buildInviteUrl, isMailEnabled, sendInviteEmail } from '../src/services/
 
 const auth = (token) => ({ Authorization: `Bearer ${token}` });
 
-test('buildInviteUrl encodes the token and falls back to a relative path when APP_URL is unset', () => {
-  // In the test environment APP_URL is not set, so the URL is relative.
+test('buildInviteUrl encodes the token in the URL fragment and falls back to a relative path when APP_URL is unset', () => {
+  // In the test environment APP_URL is not set, so the URL is relative. The
+  // token must live in the fragment (#), never the query string (?), so it is
+  // never sent to the server or written to access logs.
   const url = buildInviteUrl('abc/def?x=1');
-  assert.equal(url, '/accept-invite?token=abc%2Fdef%3Fx%3D1');
-  assert.ok(url.startsWith('/accept-invite?token='));
+  assert.equal(url, '/accept-invite#token=abc%2Fdef%3Fx%3D1');
+  assert.ok(url.startsWith('/accept-invite#token='));
+  assert.ok(!url.includes('?token='), 'token must not be placed in the query string');
 });
 
 test('sendInviteEmail is disabled (no transport) when SMTP is not configured', async () => {
   assert.equal(isMailEnabled(), false);
   const result = await sendInviteEmail({ to: 'a@b.test', companyName: 'Acme', adminName: 'A', token: 'tok' });
   assert.equal(result.sent, false);
-  assert.equal(result.link, '/accept-invite?token=tok');
+  assert.equal(result.link, '/accept-invite#token=tok');
+  assert.ok(!result.link.includes('?token='));
 });
 
 test('sendInviteEmail sends via an injected transport and returns the invite link', async () => {
@@ -38,7 +42,7 @@ test('sendInviteEmail sends via an injected transport and returns the invite lin
 
   assert.equal(result.sent, true);
   assert.equal(result.messageId, '<msg-123@test>');
-  assert.equal(result.link, '/accept-invite?token=secret-token');
+  assert.equal(result.link, '/accept-invite#token=secret-token');
 
   assert.equal(sent.length, 1);
   assert.equal(sent[0].to, 'admin@acme.test');
@@ -60,7 +64,8 @@ test('invitation responses include an inviteUrl and emailSent flag', async () =>
   const inv = onboard.body.data.invitation;
   assert.ok(inv.invitationToken);
   assert.equal(inv.email, 'e-admin@email.test');
-  assert.equal(inv.inviteUrl, `/accept-invite?token=${encodeURIComponent(inv.invitationToken)}`);
+  assert.equal(inv.inviteUrl, `/accept-invite#token=${encodeURIComponent(inv.invitationToken)}`);
+  assert.ok(!inv.inviteUrl.includes('?token='));
   assert.equal(inv.emailSent, false);
 
   const companyId = onboard.body.data.company.id;
@@ -69,6 +74,7 @@ test('invitation responses include an inviteUrl and emailSent flag', async () =>
     .set(auth(admin))
     .send({ name: 'E Admin', email: 'e-admin@email.test' });
   assert.equal(invited.status, 200);
-  assert.equal(invited.body.data.inviteUrl, `/accept-invite?token=${encodeURIComponent(invited.body.data.invitationToken)}`);
+  assert.equal(invited.body.data.inviteUrl, `/accept-invite#token=${encodeURIComponent(invited.body.data.invitationToken)}`);
+  assert.ok(!invited.body.data.inviteUrl.includes('?token='));
   assert.equal(invited.body.data.emailSent, false);
 });

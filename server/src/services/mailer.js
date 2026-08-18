@@ -16,10 +16,15 @@ export function isMailEnabled() {
 /**
  * Absolute accept-invite URL for a one-time invitation token. Falls back to a
  * relative path when APP_URL is not configured.
+ *
+ * The token is carried in the URL fragment (`#token=...`), never the query
+ * string. Fragments are not sent to the server, so the token can never be
+ * written to access logs (morgan `combined` logs the request line, including
+ * any query string) or leak via the `Referer` header.
  */
 export function buildInviteUrl(token) {
   const base = (env.appUrl || '').replace(/\/+$/, '');
-  return `${base}/accept-invite?token=${encodeURIComponent(token)}`;
+  return `${base}/accept-invite#token=${encodeURIComponent(token)}`;
 }
 
 function getTransport() {

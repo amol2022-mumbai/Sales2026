@@ -4,9 +4,11 @@ import { HttpError } from '../lib/httpError.js';
 
 // eslint-disable-next-line no-unused-vars
 export function notFoundHandler(req, res, _next) {
+  // Use req.path (path only) rather than req.originalUrl so any query string
+  // (which may carry sensitive values) is never echoed back to the client.
   res.status(404).json({
     success: false,
-    error: { code: 'NOT_FOUND', message: `Route not found: ${req.method} ${req.originalUrl}` },
+    error: { code: 'NOT_FOUND', message: `Route not found: ${req.method} ${req.path}` },
   });
 }
 

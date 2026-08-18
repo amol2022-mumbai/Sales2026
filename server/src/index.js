@@ -17,14 +17,13 @@ function boot() {
   }
 
   migrate();
-  const seed = seedDatabase();
+  seedDatabase();
   runFollowUpReminders();
   setInterval(runFollowUpReminders, 60 * 60 * 1000).unref();
 
   const app = createApp();
   const server = app.listen(env.port, () => {
     console.log(`[server] listening on http://localhost:${env.port} (${env.nodeEnv})`);
-    console.log(`[server] super admin ready: ${seed.adminEmail}`);
   });
 
   let shuttingDown = false;
