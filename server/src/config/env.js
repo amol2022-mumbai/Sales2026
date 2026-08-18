@@ -91,26 +91,89 @@ export const env = {
   tempCredentialTtlHours: toInt(process.env.TEMP_CREDENTIAL_TTL_HOURS, 24),
 };
 
+// Values that are clearly not a real production configuration. These are the
+// documented examples/defaults from .env.production.example plus the code
+// fallbacks in `env`. Angle-bracket tokens like <REPLACE_WITH_...> are the
+// project's placeholder convention and are always rejected.
+const PLACEHOLDER_VALUES = new Set([
+  'changeme123!',
+  'changeme',
+  'change-me',
+  'change-me-to-a-long-random-secret',
+  'your-api-key-here',
+  'your-secret-here',
+  'replace_me',
+  'replaceme',
+  'placeholder',
+  'acme corp',
+  'acme',
+]);
+
+function isPlaceholder(value) {
+  if (typeof value !== 'string') return false;
+  const v = value.trim();
+  if (!v) return false;
+  if (/^<[^>]+>$/.test(v)) return true;
+  if (PLACEHOLDER_VALUES.has(v.toLowerCase())) return true;
+  // Example/placeholder email addresses and hostnames.
+  if (/@(example\.com|example\.org|example\.net)$/i.test(v)) return true;
+  if (/^(https?:\/\/)?(example\.com|example\.org|example\.net)(\/.*)?$/i.test(v)) return true;
+  return false;
+}
+
 export function validateEnv(config = env) {
   const problems = [];
-  if (!config.jwtSecret || config.jwtSecret === 'change-me-to-a-long-random-secret') {
+
+  // JWT_SECRET is always required (hard failure in production, warning
+  // elsewhere) and must never be a placeholder.
+  if (!config.jwtSecret || isPlaceholder(config.jwtSecret)) {
     problems.push(
-      'JWT_SECRET is missing or set to the placeholder value. Set a strong secret in .env (openssl rand -hex 48).'
+      'JWT_SECRET is missing or set to a placeholder value. Set a strong secret in .env (openssl rand -hex 48).'
     );
   }
 
   // Production-only secret hygiene. These are hard failures in production
   // (boot() refuses to start) but intentionally only warnings elsewhere so
-  // local development and tests remain frictionless.
+  // local development and tests remain frictionless. Every message names the
+  // offending variable without printing its value.
   if (config.isProduction) {
-    if (config.seedAdminPassword === 'ChangeMe123!') {
+    if (isPlaceholder(config.seedAdminPassword)) {
       problems.push(
-        'SEED_ADMIN_PASSWORD is still the default placeholder. Set a strong unique super-admin password in production.'
+        'SEED_ADMIN_PASSWORD is set to a placeholder or default value. Set a strong unique super-admin password in production.'
+      );
+    }
+    if (isPlaceholder(config.seedAdminEmail)) {
+      problems.push(
+        'SEED_ADMIN_EMAIL is set to a placeholder value. Set the real super-admin login email in production.'
+      );
+    }
+    if (isPlaceholder(config.seedCompanyName)) {
+      problems.push(
+        'SEED_COMPANY_NAME is set to a placeholder value. Set the real company name in production.'
+      );
+    }
+    if (config.paymentSecretKey && isPlaceholder(config.paymentSecretKey)) {
+      problems.push(
+        'PAYMENT_SECRET_KEY is set to a placeholder value. Provide a real payment secret or leave it empty for mock checkout.'
       );
     }
     if (config.paymentSecretKey && !config.paymentWebhookSecret) {
       problems.push(
         'PAYMENT_SECRET_KEY is configured but PAYMENT_WEBHOOK_SECRET is missing. Inbound payment webhooks would be rejected (fail-closed) and subscriptions could never be confirmed.'
+      );
+    } else if (config.paymentWebhookSecret && isPlaceholder(config.paymentWebhookSecret)) {
+      problems.push(
+        'PAYMENT_WEBHOOK_SECRET is set to a placeholder value. Provide a real webhook signing secret.'
+      );
+    }
+    if (config.smtpPass && isPlaceholder(config.smtpPass)) {
+      problems.push(
+        'SMTP_PASS is set to a placeholder value. Provide a real SMTP password or leave SMTP unconfigured.'
+      );
+    }
+    if (config.aiApiKey && isPlaceholder(config.aiApiKey)) {
+      problems.push(
+        'AI_API_KEY is set to a placeholder value. Provide a real API key or leave it empty to use the offline assistant.'
       );
     }
   }
